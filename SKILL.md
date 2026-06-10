@@ -58,7 +58,7 @@ user-invocable: true
 | `tasks[].arch` | 是 | 目標架構 (x86_64/arm64) |
 | `tasks[].orig_version` | 否 | 原始版本號，可從 src_url 自動提取 |
 
-> **`*` 必填說明**：`projects_root` 在無 `projects_repo` 時為必填。若設有 `projects_repo`，則 `projects_root` 可為空，將由 Git 倉庫決定本地路徑。
+> **`*` 必填說明**：`projects_root` 在無 `projects_repo` 時為必填。若設有 `projects_repo`，則 `projects_root` 可為空，將由 Git 倉庫決定本地路徑（推導為 `projects_root=./projects`）。
 
 > **`${tag}` 變量解析**：所有含 `${tag}` 的 global 路徑變量（如 `output_dir`、`data_dir`）均替換為 `date +"%Y-%m-%d"` 的輸出值（例如 `${tag}` → `2026-06-10`）。
 
@@ -68,7 +68,7 @@ user-invocable: true
 載入順序:
 1. 任務文件中的 inline global 優先
 2. inline global 中缺失的字段 → 查找 `agent-config.json` 中的同名 global 字段
-3. 若 `projects_root` 為空且設有 `projects_repo` → 使用 Git 方案克隆/同步倉庫
+3. 若 `projects_root` 為空且設有 `projects_repo` → 設定 `projects_root=./projects`，使用 Git 方案克隆/同步倉庫
 4. 若上述均無 → 使用對應字段的預設值
 ```
 
@@ -264,7 +264,7 @@ echo "net.kuribo64.melonDS" | ./scripts/query_upstream.sh
 1. **載入全局配置**（雙模式）：
    - 優先使用任務文件中的 inline `global` 區段
    - inline 中缺失的字段 → 查找 `./agent-config.json` 中的同名 `global` 字段
-   - 若 `projects_root` 為空且設有 `projects_repo` → 啟用 Git 方案
+   - 若 `projects_root` 為空且設有 `projects_repo` → 設定 `projects_root=./projects`，啟用 Git 方案
    - 若上述均無 → 使用對應字段的預設值
 2. **`${tag}` 變量解析**：所有含 `${tag}` 的 global 路徑變量替換為 `date +"%Y-%m-%d"` 的輸出值（如 `2026-06-10`）
 3. **解析 `version_extract_examples`**：若 `agent-config.json` 中存在，載入版本提取規則列表
