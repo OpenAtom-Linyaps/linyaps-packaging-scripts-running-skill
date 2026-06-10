@@ -14,6 +14,7 @@ user-invocable: true
 - 用戶提供 JSON 或 CSV 任務文件並要求執行 linyaps 打包
 - 用戶要求批量構建多個 linyaps 包
 - 用戶提到 `pak_linyaps.sh` 或便捷打包腳本
+- 用戶僅提供包名列表（`--pkg-name`、`--task-file` 或管道輸入），需要自動從上游查詢補全 `src_url`/`arch`/`orig_version` 等信息
 
 ## JSON 任務文件格式
 
@@ -43,7 +44,7 @@ user-invocable: true
 | `global.output_dir` | 否 | 輸出目錄，預設 `./output` |
 | `global.build_tmp_dir` | 否 | 構建緩存**根**目錄，每個 task 自動建立 `<pkgName>/` 子目錄；預設自動生成臨時目錄 |
 | `global.src_dir` | 否 | 原始資源下載目錄，預設 `./src` |
-| `tasks[].pkgName` | 是 | 包名，用於定位項目子目錄 |
+| `tasks[].pkgName` | 是 | 包名，用於定位項目子目錄；若僅提供此欄位而無 `src_url`/`arch`/`orig_version`，可配合 `scripts/query_upstream.sh` 自動查詢補全 |
 | `tasks[].src_url` | 是 | 原始資源下載地址 |
 | `tasks[].arch` | 是 | 目標架構 (x86_64/arm64) |
 | `tasks[].orig_version` | 否 | 原始版本號，可從 src_url 自動提取 |
@@ -110,12 +111,116 @@ user-invocable: true
 - 支持簡體/繁體中文表頭
 - 跳過缺少必要欄位（包名、下载地址、架构）的行
 
+## 上游信息查詢 (query_upstream.sh)
+
+當上游平台（如 multica）下發的任務僅包含包名（`pkgName`）而缺少 `src_url`、`arch`、`orig_version` 等關鍵信息時，使用此腳本從上游 API 自動查詢補全。
+
+### 腳本位置
+
+scripts/query_upstream.sh
+
+### API 字段映射
+
+腳本調用上游 API 後，將返回字段映射為標準任務格式：
+
+| API 返回字段 | 映射到任務字段 | 說明 |
+|-------------|---------------|------|
+| `appid` | `pkgName` | 包名 |
+| `download_url` | `src_url` | 原始資源下載地址 |
+| `version` | `orig_version` | 原始版本號 |
+| `arch` | `arch` | 目標架構 (x86_64/arm64) |
+
+### 輸入方式
+
+腳本支援三種輸入方式：
+
+```bash
+# 方式 1: 直接指定包名（支援逗號分隔多個包名）
+./scripts/query_upstream.sh --pkg-name=net.kuribo64.melonDS
+./scripts/query_upstream.sh --pkg-name=com.opera.browser,com.google.chrome
+
+# 方式 2: 從文件讀取（支援 JSON 或純文本格式）
+./scripts/query_upstream.sh --task-file=task.json
+./scripts/query_upstream.sh --task-file=pkglist.txt
+
+# 方式 3: 管道輸入（每行一個包名）
+echo "net.kuribo64.melonDS" | ./scripts/query_upstream.sh
+```
+
+### 合併 Global 配置
+
+可透過 `--global-config` 傳入 `agent-config.json`，合併輸出完整的任務 JSON：
+
+```bash
+./scripts/query_upstream.sh \
+  --pkg-name=net.kuribo64.melonDS \
+  --global-config=for-multica/agent-config.json \
+  --output=full-tasks.json
+```
+
+### 輸出格式
+
+輸出爲標準任務 JSON，與 `run_tasks.sh` 完全相容：
+
+```json
+{
+  "global": {
+    "projects_root": "...",
+    "output_dir": "...",
+    "build_tmp_dir": "...",
+    "src_dir": "./src"
+  },
+  "tasks": [
+    {
+      "pkgName": "net.kuribo64.melonDS",
+      "src_url": "https://...",
+      "arch": "x86_64",
+      "orig_version": "1.1"
+    }
+  ]
+}
+```
+
+### 注意事項
+
+- 依賴 `python3` 和 `curl`，執行前會自動檢查
+- 若輸入的 JSON 任務文件已包含完整的 `src_url`/`arch`/`orig_version`，腳本會直接透傳，**不會**重複查詢 API
+- API 不可達或返回錯誤時，腳本會記錄錯誤信息並繼續處理其他包名（不阻斷批量流程）
+- 支持透過 `--api-url=<url>` 覆蓋默認 API 地址
+
 ## 執行流程
 
-### 步驟 1: 解析任務文件
-讀取用戶提供的任務文件（JSON 或 CSV 格式）：
+### 步驟 1: 導入任務
+
+有兩種方式導入任務，根據用戶提供的內容選擇：
+
+#### 方式 A：完整任務文件（JSON / CSV）
+
+用戶直接提供包含 `pkgName`、`src_url`、`arch`、`orig_version` 的完整任務文件：
 - **JSON 格式**：直接由 `run_tasks.sh` 解析，提取 `global` 配置和 `tasks` 列表
 - **CSV 格式**：由 `csv_to_json.sh` 轉換為 JSON 後再執行
+
+#### 方式 B：僅包名 → 查詢補全
+
+用戶僅提供包名列表，先調用 `scripts/query_upstream.sh` 從上游 API 查詢補全缺失的 `src_url`、`arch`、`orig_version`，生成完整任務 JSON：
+
+```bash
+./scripts/query_upstream.sh \
+  --pkg-name=com.opera.browser \
+  --global-config=agent-config.json \
+  --output=full-tasks.json
+```
+
+或使用 `--task-file` 批量查詢後直接管道傳給 `run_tasks.sh`：
+
+```bash
+./scripts/query_upstream.sh \
+  --task-file=pkglist.txt \
+  --global-config=agent-config.json \
+  --output=full-tasks.json
+```
+
+兩種方式的最終產物都是統一的完整任務 JSON，進入下一步。
 
 ### 步驟 2: 初始化目錄
 - 建立 `src_dir`（原始資源目錄）
