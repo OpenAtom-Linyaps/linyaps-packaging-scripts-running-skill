@@ -262,6 +262,7 @@ echo "net.kuribo64.melonDS" | ./scripts/query_upstream.sh
 - 若輸入的 JSON 任務文件已包含完整的 `src_url`/`arch`/`orig_version`，腳本會直接透傳，**不會**重複查詢 API
 - API 不可達或返回錯誤時，腳本會記錄錯誤信息並繼續處理其他包名（不阻斷批量流程）
 - 支持透過 `--api-url=<url>` 覆蓋默認 API 地址
+- **禁止**使用 `fetch_webpage` 或瀏覽器工具自行爬取上游網站獲取版本/下載地址——上游信息必須通過 `query_upstream.sh` 調用 API 或任務 JSON 中已有的字段獲取
 
 ## 執行流程
 
