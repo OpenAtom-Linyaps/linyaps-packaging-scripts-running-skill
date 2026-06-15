@@ -99,12 +99,7 @@ user-invocable: true
       "url_pattern": "firefox-{version}.en-US.linux-{arch}.tar.xz",
       "extract_regex": "firefox-([0-9]+\\.[0-9]+(?:\\.[0-9]+)*)\\.en-US"
     }
-  ],
-  "assignment": {
-    "agents": [ ... ],
-    "members": [ ... ],
-    "default_strategy": { ... }
-  }
+  ]
 }
 ```
 
@@ -114,7 +109,6 @@ user-invocable: true
 |------|------|
 | `global` | 全局配置，與 inline global 字段相同，作為其回退值 |
 | `version_extract_examples` | 版本提取規則列表，用於從 URL 中提取版本號 |
-| `assignment` | 智能體指派配置（Multica 平台整合用） |
 
 ## 版本提取規則 (version_extract_examples)
 
@@ -188,7 +182,7 @@ user-invocable: true
 
 ## 上游信息查詢 (query_upstream.sh)
 
-當上游平台（如 multica）下發的任務僅包含包名（`pkgName`）而缺少 `src_url`、`arch`、`orig_version` 等關鍵信息時，使用此腳本從上游 API 自動查詢補全。
+當上游平台下發的任務僅包含包名（`pkgName`）而缺少 `src_url`、`arch`、`orig_version` 等關鍵信息時，使用此腳本從上游 API 自動查詢補全。
 
 ### 腳本位置
 
