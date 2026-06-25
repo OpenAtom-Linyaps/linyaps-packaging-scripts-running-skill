@@ -53,6 +53,16 @@ else
 	echo "   file uploaded"
 	linyapsPkgUrl="https://rustfsadmin.cicd2.getdeepin.org/linyaps/packaging-CI-output/${dateTag}/$s3path"
 	echo "   file url: $linyapsPkgUrl"
+	
+	# 验证上传
+	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	if bash "${SCRIPT_DIR}/verify_upload.sh" "$linyapsPkgUrl" 5; then
+		echo "   upload verified"
+	else
+		echo "   upload verification failed, marking as failed"
+		pakStatus="failed"
+		linyapsPkgUrl="null"
+	fi
 fi
 
 echo "   reporting status: $pakStatus"
