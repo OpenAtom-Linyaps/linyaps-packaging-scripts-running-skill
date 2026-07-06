@@ -12,7 +12,7 @@
 #   $3  pakStatus       — 打包狀態：non-verified（成功）或 failed（失敗）
 #   $4  filepath         — 構建產物文件完整路徑（成功時）；"null" 表示跳過上傳（失敗時）
 #   $5  upstreamVer      — 上游版本號（對應 task.orig_version）
-#   $6  linyapsPkgVer    — linyaps 包版本（一般同 upstreamVer）
+#   $6  linyapsPkgVer    — linyaps 包版本（從 layer 文件名提取，可能與 upstreamVer 不同）
 #   $7  linyapsPkgUrl    — 成功時為 S3 產物 URL；失敗時固定為 "null"（對應 task.src_url）
 #
 # 範例：
