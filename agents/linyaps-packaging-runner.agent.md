@@ -72,14 +72,24 @@ agents/linyaps-packaging-runner.agent.md     ← 本文件（入口）
 agent-config.json                             ← 全局配置
 scripts/                                      ← 共享工具
 ├── common.sh                                 ← 共享庫
-├── csv_to_json.sh                            ← CSV 轉 JSON
-├── query_upstream.sh                         ← 上游信息查詢
-├── status_upload.sh                          ← 產物上傳
-└── ...
+├── check-agent-status.sh                     ← Agent 健康檢查
 skills/
 ├── config/arch_mapping.json                  ← 架構映射表
 ├── linglong-binary-runner/                   ← binary 子 SKILL (type=binary)
-└── linglong-source-updater/                  ← source 子 SKILL (type=source)
+├── linglong-source-updater/                  ← source 子 SKILL (type=source)
+├── linyaps-packaging-precheck/               ← 前置檢測 SKILL
+│   └── scripts/
+│       ├── precheck.sh                       ← 統一前置檢測
+│       └── query_upstream.sh                 ← 上游信息查詢
+├── linyaps-packaging-report/                 ← 產物上傳與狀態回報 SKILL
+│   └── scripts/
+│       ├── status_upload.sh                  ← 產物上傳
+│       ├── status_upload_initOnly.sh         ← 初始化產物上傳
+│       └── verify_upload.sh                  ← 上傳驗證
+└── linyaps-multica-packer-dispatch/          ← packer 調度 SKILL
+    └── scripts/
+        ├── csv_to_json.sh                    ← CSV 轉 JSON
+        └── dispatch.sh                       ← 指派邏輯
 ```
 
 ## Skills 目錄
@@ -98,12 +108,27 @@ skills/
 1. **讀取 `agent-config.json`**：解析 `global` 配置和 `version_extract_examples`
 2. **`${tag}` 路徑解析**：`date +"%Y-%m-%d"` 替換所有含 `${tag}` 的路徑
 3. **載入任務文件**：
-   - CSV 格式：先執行 `bash scripts/csv_to_json.sh` 轉換為 JSON
+   - CSV 格式：先執行 `bash skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh` 轉換為 JSON
    - JSON 格式：直接解析
 
-#### 1.2 上游信息查詢（如需要）
+#### 1.2 统一前置检测
 
-若任務缺少 `src_url`/`arch`/`orig_version`，使用 `query_upstream.sh` 補全。
+在进入上游信息查询与打包执行之前，先通过统一前置检测门控。
+
+调用 `linyaps-packaging-precheck` skill：
+
+```
+result = skill("linyaps-packaging-precheck", {
+  config: "agent-config.json"
+})
+```
+
+- `result.passed=true` → 继续执行步骤 1.3
+- `result.passed=false` → 输出失败详情，终止流程
+
+#### 1.3 上游信息查詢（如需要）
+
+若任務缺少 `src_url`/`arch`/`orig_version`，使用 `skills/linyaps-packaging-precheck/scripts/query_upstream.sh` 補全。
 
 #### 1.3 前置驗證
 
@@ -138,7 +163,7 @@ for task_type, task_list in tasks_by_type.items():
 
 - 合併各子 SKILL 的執行結果
 - 分類統計：成功數 / 失敗數 / 待初始化數（binary 項目找不到）/ 待源码初始化數（source 項目找不到）
-- 執行 `status_upload.sh` 上報狀態（若為初始化後首次打包，依來源類型使用 `status_upload_initOnly.sh`）
+- 執行 `skills/linyaps-packaging-report/scripts/status_upload.sh` 上報狀態（若為初始化後首次打包，依來源類型使用 `status_upload_initOnly.sh`）
 - 輸出最終統計
 
 ## 約束

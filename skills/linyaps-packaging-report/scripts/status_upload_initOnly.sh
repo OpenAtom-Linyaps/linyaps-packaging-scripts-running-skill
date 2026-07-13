@@ -4,7 +4,7 @@
 # 用途：每個任務打包完成後，將構建產物上傳至 S3 並向 cooperation.uniontech.com webhook 回報狀態。
 # 無論打包成功或失敗都必須調用，僅 filepath 和 pakStatus 不同。
 #
-# 用法：bash ./scripts/status_upload.sh <linyapsPkgName> <linyapsPkgArch> <pakStatus> <filepath> <upstreamVer> <linyapsPkgVer> <linyapsPkgUrl>
+# 用法：bash skills/linyaps-multica-packer-dispatch/scripts/status_upload.sh <linyapsPkgName> <linyapsPkgArch> <pakStatus> <filepath> <upstreamVer> <linyapsPkgVer> <linyapsPkgUrl>
 #
 # 參數說明：
 #   $1  linyapsPkgName  — 包名（對應 task.pkgName）
@@ -17,12 +17,12 @@
 #
 # 範例：
 #   # 打包成功
-#   bash ./scripts/status_upload.sh com.opera.browser x86_64 non-verified \
+#   bash skills/linyaps-multica-packer-dispatch/scripts/status_upload.sh com.opera.browser x86_64 non-verified \
 #     /data/output/2026-06-17/com.opera.browser_130.0.5847.92_x86_64.layer \
 #     130.0.5847.92 130.0.5847.92 https://download3.operacdn.com/.../opera-stable_130.0.5847.92_amd64.deb
 #
 #   # 打包失敗（不上傳產物，linyapsPkgUrl 固定為 null）
-#   bash ./scripts/status_upload.sh com.opera.browser x86_64 failed null \
+#   bash skills/linyaps-multica-packer-dispatch/scripts/status_upload.sh com.opera.browser x86_64 failed null \
 #     130.0.5847.92 130.0.5847.92 null
 #
 # 前置依賴：rclone（用於 S3 上傳）、curl（用於 webhook 通知）
@@ -66,7 +66,7 @@ else
 fi
 
 echo "   reporting status: $pakStatus"
-curl -q "https://cooperation.uniontech.com/api/workflow/hooks/NmEzMGZlNDlmNzE3ZmIyMmIwZjVlODQ2?linyapsPkgName=$linyapsPkgName&linyapsPkgArch=$linyapsPkgArch&pakStatus=$pakStatus&upstreamVer=$upstreamVer&linyapsPkgVer=$linyapsPkgVer&linyapsPkgUrl=$linyapsPkgUrl"
+curl -q "https://cooperation.uniontech.com/api/workflow/hooks/NmEzZDFjMGQxMDM5YjQ1YWRlNGE2OWFh?linyapsPkgName=$linyapsPkgName&linyapsPkgArch=$linyapsPkgArch&pakStatus=$pakStatus&upstreamVer=$upstreamVer&linyapsPkgVer=$linyapsPkgVer&linyapsPkgUrl=$linyapsPkgUrl"
 
 
 echo "done"

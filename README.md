@@ -72,9 +72,6 @@ User Task (JSON/CSV)
 ├── agent-config.json                       # Global configuration
 ├── scripts/
 │   ├── common.sh                           # Shared library (14 functions)
-│   ├── csv_to_json.sh                      # CSV-to-JSON converter & unified entry
-│   ├── query_upstream.sh                   # Upstream info lookup
-│   ├── status_upload.sh                    # Artifact upload
 │   └── check-agent-status.sh               # Agent health check
 ├── scripts-manifest.json                    # Script distribution map
 ├── skills/
@@ -96,11 +93,25 @@ User Task (JSON/CSV)
 │       │   └── validate-linglong-yaml.py   # Dual-mode YAML validator
 │       └── references/
 │           └── manifests-for-yaml.md       # linglong.yaml field spec
+│   ├── linyaps-packaging-precheck/          # Pre-flight environment check skill
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       ├── common.sh                   # Shared library (copy)
+│   │       ├── precheck.sh                 # Unified pre-flight checker
+│   │       └── query_upstream.sh           # Upstream info lookup
+│   ├── linyaps-packaging-report/            # Artifact upload & status reporting
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       ├── common.sh                   # Shared library (copy)
+│   │       ├── status_upload.sh            # Upload + status report (regular)
+│   │       ├── status_upload_initOnly.sh   # Upload + status report (init-only)
+│   │       └── verify_upload.sh            # S3 upload verification
 │   └── linyaps-multica-packer-dispatch/     # Multica dispatch sub-skill
 │       ├── SKILL.md
 │       └── scripts/
 │           ├── common.sh                   # Shared library (copy)
 │           ├── check-agent-status.sh        # Agent health check (copy)
+│           ├── csv_to_json.sh              # CSV-to-JSON converter & unified entry
 │           ├── detect_init_source.sh        # Init source detection
 │           └── dispatch.sh                 # Dispatch orchestrator
 ├── for-multica/
@@ -117,7 +128,7 @@ User Task (JSON/CSV)
 |------|-------------|
 | `agents/linyaps-packaging-runner.agent.md` | **Agent entry** — reads config, groups tasks by `type`, dispatches to sub-skills |
 | `agent-config.json` | Global config: `projects_root`, `output_dir`, `build_tmp_dir`, `src_dir` |
-| `scripts/csv_to_json.sh` | **Unified entry point** — accepts CSV or JSON, converts CSV to JSON, triggers agent dispatch |
+| `skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh` | **Unified entry point** — accepts CSV or JSON, converts CSV to JSON, triggers agent dispatch |
 | `scripts/common.sh` | Shared library used by all sub-skill scripts (colored output, parse_json, download, arch validation, etc.) |
 | `skills/linglong-binary-runner/scripts/run_tasks.sh` | **Binary executor** — downloads sources, validates arch, runs `pak_linyaps.sh` per task |
 | `skills/linglong-source-updater/scripts/run_tasks.sh` | **Source executor** — 6-step pipeline (validate → download+checksum → update YAML → build → export) |
@@ -129,24 +140,30 @@ User Task (JSON/CSV)
 
 ## Script Distribution
 
-The root [`scripts/`](scripts/) directory is the **authoritative source** for all shared
-utility scripts. Each skill under `skills/` maintains its own copies
-under its `<skill>/scripts/` directory to ensure **self-contained deployment** on the
-Multica platform, which only installs skill directories rather than the entire repo.
+The root [`scripts/`](scripts/) directory contains only **shared library** scripts
+(`common.sh`, `check-agent-status.sh`). Business scripts are organized by skill
+according to their workflow phase:
 
-> **Maintenance rule**: When updating a shared script in `scripts/`, the change must be
-> propagated to every skill that carries a copy. See [`scripts-manifest.json`](scripts-manifest.json)
-> for the complete mapping.
+- **Pre-flight** (`linyaps-packaging-precheck`): environment checks + upstream data lookup
+- **Packaging** (`linglong-binary-runner` / `linglong-source-updater`): build execution
+- **Reporting** (`linyaps-packaging-report`): artifact upload + status reporting
+- **Dispatch** (`linyaps-multica-packer-dispatch`): Multica platform assignment logic
 
-| Script | Root (authoritative) | linglong-binary-runner | linglong-source-updater | linyaps-multica-packer-dispatch |
-|--------|:---:|:---:|:---:|:---:|
-| `common.sh` | ✅ | ✅ | ✅ | ✅ |
-| `csv_to_json.sh` | ✅ | — | — | — |
-| `query_upstream.sh` | ✅ | — | — | — |
-| `status_upload.sh` | ✅ | — | — | — |
-| `status_upload_initOnly.sh` | ✅ | — | — | — |
-| `verify_upload.sh` | ✅ | — | — | — |
-| `check-agent-status.sh` | ✅ | — | — | ✅ |
+> **Maintenance rule**: Each skill's scripts directory is the single source of truth
+> for its scripts. See [`scripts-manifest.json`](scripts-manifest.json) for the complete mapping.
+
+| Script | Root (authoritative) | linglong-binary-runner | linglong-source-updater | linyaps-packaging-precheck | linyaps-packaging-report | linyaps-multica-packer-dispatch |
+|--------|:---:|:---:|:---:|:---:|:---:|:---:|
+| `common.sh` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `check-agent-status.sh` | ✅ | — | — | — | — | ✅ |
+| `csv_to_json.sh` | — | — | — | — | — | ✅ |
+| `precheck.sh` | — | — | — | ✅ | — | — |
+| `query_upstream.sh` | — | — | — | ✅ | — | — |
+| `status_upload.sh` | — | — | — | — | ✅ | — |
+| `status_upload_initOnly.sh` | — | — | — | — | ✅ | — |
+| `verify_upload.sh` | — | — | — | — | ✅ | — |
+| `detect_init_source.sh` | — | — | — | — | — | ✅ |
+| `dispatch.sh` | — | — | — | — | — | ✅ |
 
 ### Per-Skill Script Inventory
 
@@ -154,7 +171,9 @@ Multica platform, which only installs skill directories rather than the entire r
 |------------|--------------------------------|--------------------------|
 | `skills/linglong-binary-runner/scripts/` | `common.sh` | `run_tasks.sh`, `validate_projects.sh` |
 | `skills/linglong-source-updater/scripts/` | `common.sh` | `run_tasks.sh`, `download-and-checksum.sh`, `update-linglong-yaml.py`, `validate-linglong-yaml.py` |
-| `skills/linyaps-multica-packer-dispatch/scripts/` | `common.sh`, `check-agent-status.sh` | `detect_init_source.sh`, `dispatch.sh` |
+| `skills/linyaps-packaging-precheck/scripts/` | `common.sh` | `precheck.sh`, `query_upstream.sh` |
+| `skills/linyaps-packaging-report/scripts/` | `common.sh` | `status_upload.sh`, `status_upload_initOnly.sh`, `verify_upload.sh` |
+| `skills/linyaps-multica-packer-dispatch/scripts/` | `common.sh`, `check-agent-status.sh` | `csv_to_json.sh`, `detect_init_source.sh`, `dispatch.sh` |
 
 ---
 
@@ -166,10 +185,10 @@ Multica platform, which only installs skill directories rather than the entire r
 # 1. Prepare a CSV file with headers: 记录ID,包名,架构,版本,网站地址,下载地址
 
 # 2. Preview the generated JSON (dry-run mode)
-./scripts/csv_to_json.sh my-tasks.csv --dry-run
+./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh my-tasks.csv --dry-run
 
 # 3. Execute packaging with your adapted projects
-./scripts/csv_to_json.sh my-tasks.csv \
+./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh my-tasks.csv \
   --projects_root=/path/to/adapted/projects
 ```
 
@@ -177,7 +196,7 @@ Multica platform, which only installs skill directories rather than the entire r
 
 ```bash
 # Direct execution with a JSON task file containing type=binary tasks
-./scripts/csv_to_json.sh task-example.json
+./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh task-example.json
 ```
 
 > **Note:** Starting directly with `csv_to_json.sh` is backward compatible — it detects JSON files and passes them through.
@@ -280,14 +299,14 @@ Since CSV files have no `global` section, configuration is provided via:
 
 1. **Command-line arguments** (highest priority):
    ```bash
-   ./scripts/csv_to_json.sh tasks.csv \
+   ./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh tasks.csv \
      --projects_root=/path/to/projects \
      --output_dir=./output
    ```
 
 2. **JSON config file** (`--config`):
    ```bash
-   ./scripts/csv_to_json.sh tasks.csv --config=global_config.json
+   ./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh tasks.csv --config=global_config.json
    ```
 
 3. **Default values** (lowest priority):
@@ -327,7 +346,7 @@ Since CSV files have no `global` section, configuration is provided via:
 **Unified entry point** — accepts both CSV and JSON files, converts CSV to JSON, then triggers the agent dispatch flow.
 
 ```
-./scripts/csv_to_json.sh <task.csv|task.json> [options]
+./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh <task.csv|task.json> [options]
 ```
 
 | Option | Default | Description |
