@@ -46,6 +46,7 @@ while [[ $# -gt 0 ]]; do
     --type=*)       TYPE="${1#*=}" ;;
     --data-dir=*)   DATA_DIR="${1#*=}" ;;
     --config=*)     CONFIG_FILE="${1#*=}" ;;
+    --agent-config-path=*) CONFIG_FILE="${1#*=}" ;;
     --success=*)    SUCCESS_COUNT="${1#*=}" ;;
     --fail=*)       FAIL_COUNT="${1#*=}" ;;
     --pending=*)    PENDING_COUNT="${1#*=}" ;;

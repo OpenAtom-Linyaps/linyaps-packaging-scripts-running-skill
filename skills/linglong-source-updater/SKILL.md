@@ -1,7 +1,7 @@
 ---
 name: linglong-source-updater
 description: '更新已初始化的 linglong.yaml，補充上游源碼信息，更新構建規則，並自動打包為玲瓏 layer。用於 source 類型任務（特徵：目錄下有 linglong.yaml 但缺少 sources 段）。支援 archive/git/file/dsc 四種源碼類型。'
-argument-hint: '<task.json>'
+argument-hint: '<task.json> [--agent-config-path=<path>]'
 references:
   - references/manifests-for-yaml.md
 user-invocable: false
@@ -30,7 +30,7 @@ user-invocable: false
 
 ## 輸入
 
-標準任務 JSON，`tasks[].type` 為 `source`：
+標準任務 JSON，`tasks[].type` 為 `source`，並可選傳入 `--agent-config-path=<path>` 指定 `agent-config.json` 路徑：
 
 ```json
 {

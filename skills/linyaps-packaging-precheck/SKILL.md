@@ -4,7 +4,7 @@ description: >
   包装环境前置检测 SKILL。在进入打包流程前统一检查 CLI 工具可用性、
   网络连通性、配置完整性和脚本完整性。为 workflow 和 agent 提供门控依据。
   Agent 和其它技能通过 skill() 或直接调用 precheck.sh 使用。
-argument-hint: '[--config=<path>] [--workspace=<slug>] [--checks=<list>] [--output=<path>]'
+argument-hint: '[--config=<path>|--agent-config-path=<path>] [--workspace=<slug>] [--checks=<list>] [--output=<path>]'
 user-invocable: false
 ---
 
@@ -42,7 +42,7 @@ bash skills/linyaps-packaging-precheck/scripts/precheck.sh \
 
 ```
 result = skill("linyaps-packaging-precheck", {
-  config: "for-multica/agent-config.json",
+  agent_config_path: "for-multica/agent-config.json",
   workspace: "linyaps"
 })
 ```

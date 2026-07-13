@@ -32,16 +32,18 @@ ALL_CHECKS="cli_tools,config_validity,network_s3,network_webhook,network_upstrea
 # ---- 参数解析 ----
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --config=*)   CONFIG_FILE="${1#*=}" ;;
+    --config=*)           CONFIG_FILE="${1#*=}" ;;
+    --agent-config-path=*) CONFIG_FILE="${1#*=}" ;;
     --workspace=*) WORKSPACE="${1#*=}" ;;
     --output=*)   OUTPUT_FILE="${1#*=}" ;;
     --checks=*)   RUN_CHECKS="${1#*=}" ;;
     -h|--help)
       echo "用法: $(basename "$0") [选项]"
-      echo "  --config=<path>    agent-config.json 路径（可选，用于 config_validity 检查）"
-      echo "  --workspace=<slug>  multica workspace slug（可选）"
-      echo "  --output=<path>    JSON 结果写入路径（可选，默认 stdout）"
-      echo "  --checks=<list>    检查项列表，逗号分隔（默认全部）"
+      echo "  --config=<path>         agent-config.json 路径（可选，用于 config_validity 检查）"
+      echo "  --agent-config-path=<path>  同 --config"
+      echo "  --workspace=<slug>      multica workspace slug（可选）"
+      echo "  --output=<path>         JSON 结果写入路径（可选，默认 stdout）"
+      echo "  --checks=<list>         检查项列表，逗号分隔（默认全部）"
       echo "可选检查项: ${ALL_CHECKS}"
       exit 0 ;;
     *)
