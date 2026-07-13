@@ -10,7 +10,8 @@
       "status_upload.sh": "产物上传与 webhook 状态回报（常规）",
       "status_upload_initOnly.sh": "产物上传与 webhook 状态回报（初始化后首次打包）",
       "verify_upload.sh": "S3 上传验证",
-      "check-agent-status.sh": "Agent 健康检查（multica CLI）"
+      "check-agent-status.sh": "Agent 健康检查（multica CLI）",
+      "check_upload_status_dryrun.sh": "upload-status 前置检测（Dry-Run 闸门）"
     }
   },
   "skills": [
