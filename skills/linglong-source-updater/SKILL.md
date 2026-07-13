@@ -25,7 +25,11 @@ user-invocable: false
 
 - 目標項目目錄下存在 `linglong.yaml`，且格式正確、無 sources 段
 - `build` 字段中必須包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`（腳本會自動追加）
-- 所有目錄路徑必須使用 `${PREFIX}`
+- `build` 段中所有安裝目錄參數出現 `/usr` 或 `/usr/local` 絕對路徑均為錯誤：
+  - `--prefix=/usr` / `--libdir=/usr/lib` / `--bindir=/usr/bin`
+  - `-DCMAKE_INSTALL_PREFIX=/usr` / `-DCMAKE_INSTALL_LIBDIR=/usr/lib`
+  - `QMAKE_INSTALL_PREFIX=/usr`
+  - 以上均須以 `${PREFIX}` 替代（系統命令如 `apt-get`、`dpkg` 中的 `/usr` 除外）
 - 環境依賴：`ll-builder`、`python3-ruamel.yaml`、`python3-yaml`
 
 ## 輸入
@@ -67,5 +71,5 @@ user-invocable: false
 - 使用 `ll-builder build` + `ll-builder export` 進行源碼編譯打包，不依賴 `pak_linyaps.sh`
 - 輸入的 `linglong.yaml` 必須通過 validate 檢測（無 sources 段）
 - `build` 段必須包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
-- 所有路徑必須使用 `${PREFIX}`
+- `${PREFIX} 安裝目錄約束`：`build` 段中所有安裝目錄參數出現 `/usr` 或 `/usr/local` 絕對路徑均為錯誤（如 `--prefix=/usr`、`--libdir=/usr/lib`、`-DCMAKE_INSTALL_LIBDIR=/usr/lib`、`QMAKE_INSTALL_PREFIX=/usr`），必須以 `${PREFIX}` 替代；系統命令中的 `/usr` 除外
 - `build` 第一個步驟必須 `cd` 進入 `/project/linglong/sources/` 下的子目錄

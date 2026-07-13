@@ -30,6 +30,25 @@ NO_SOURCES = "sources section should not be present (use constraint)"
 SOURCES_REQUIRED = "sources section must be present when --allow-sources is set"
 NO_VERSION_CONSTRAINT = "dep entry '{dep}' still contains version constraint"
 
+HARDCODED_PREFIX_PATTERNS = [
+    re.compile(r'-DCMAKE_INSTALL_PREFIX=/usr(?:/local)?\b'),
+    re.compile(r'--prefix=/usr(?:/local)?\b'),
+    re.compile(r'(?<![-\w])PREFIX=/usr(?:/local)?\b'),
+    re.compile(r'(?<![-\w])prefix=/usr(?:/local)?\b'),
+    # autotools subdirectory overrides
+    re.compile(r'--(?:libdir|bindir|sbindir|includedir|datarootdir|docdir|mandir|localedir)=/usr'),
+    # cmake subdirectory overrides
+    re.compile(r'-DCMAKE_INSTALL_(?:LIBDIR|BINDIR|SBINDIR|INCLUDEDIR|DATADIR|DOCDIR|MANDIR|LOCALEDIR)=/usr'),
+    # qmake
+    re.compile(r'(?<![-\w])QMAKE_INSTALL_PREFIX=/usr'),
+]
+
+SYSTEM_COMMANDS_PATTERN = re.compile(
+    r'^\s*(apt-get|dpkg|pip|pip3|python3|python|npm|gem|cargo|go)\s'
+)
+
+HARDCODED_PREFIX_MSG = "build must use ${{PREFIX}} instead of hardcoded paths (found: '{}')"
+
 SOURCES_KINDS = {"archive", "git", "file", "dsc"}
 SOURCES_REQUIRED_FIELDS = {
     "archive": ["kind", "url", "digest"],
@@ -147,6 +166,17 @@ def validate(path: str, allow_sources: bool = False) -> list:
                 errors.append("build must contain 'touch ${PREFIX}/.linyaps_genius'")
             if "chmod -R 755 ${PREFIX}" not in build_val:
                 errors.append("build must contain 'chmod -R 755 ${PREFIX}'")
+
+            for line in build_val.split("\n"):
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#"):
+                    continue
+                if SYSTEM_COMMANDS_PATTERN.match(stripped):
+                    continue
+                for pattern in HARDCODED_PREFIX_PATTERNS:
+                    if pattern.search(stripped):
+                        errors.append(HARDCODED_PREFIX_MSG.format(pattern.pattern))
+                        break
 
     return errors
 

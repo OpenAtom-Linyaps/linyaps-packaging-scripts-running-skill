@@ -176,6 +176,15 @@ for task_type, task_list in tasks_by_type.items():
 - 使用 `ll-builder build` + `ll-builder export`，不依賴 `pak_linyaps.sh`
 - 輸入的 `linglong.yaml` 必須先通過 validate 檢測
 
+### ${PREFIX} 安裝目錄約束
+- 所有構建工具的安裝目錄參數必須使用 `${PREFIX}`，禁止硬編碼 `/usr` 或 `/usr/local`
+- 常見錯誤寫法：
+  - `--prefix=/usr`、`--libdir=/usr/lib`、`--bindir=/usr/bin`、`--includedir=/usr/include`
+  - `-DCMAKE_INSTALL_PREFIX=/usr`、`-DCMAKE_INSTALL_LIBDIR=/usr/lib`、`-DCMAKE_INSTALL_BINDIR=/usr/bin`
+  - `PREFIX=/usr/local`、`QMAKE_INSTALL_PREFIX=/usr`
+- 正確寫法：`-DCMAKE_INSTALL_PREFIX=${PREFIX}`、`--prefix=${PREFIX}`、`PREFIX=${PREFIX}`
+- 輸出校驗階段通過 `validate-linglong-yaml.py` 的 `--allow-sources` 模式檢測
+
 ### 通用約束
 - 所有腳本調用使用相對於 workspace 根目錄的路徑，不使用 `cd` 切換後執行
 - 多架構版本不一致時，優先使用 x86_64 架構的版本
