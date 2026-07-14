@@ -18,6 +18,12 @@ fi
 
 ARCH_MAPPING_FILE="${REPO_ROOT}/skills/config/arch_mapping.json"
 
+# 構建約束預設值（可由 @MAX_BUILD_ATTEMPTS@ / @BUILD_TIMEOUT_SEC@ 環境變數覆蓋）
+: "${MAX_BUILD_ATTEMPTS:=2}"
+: "${BUILD_TIMEOUT_SEC:=1800}"
+
+RETRY_INTERVAL=10
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -28,6 +34,34 @@ log_info()  { echo -e "${CYAN}[INFO]${NC} $*" >&2; }
 log_ok()    { echo -e "${GREEN}[OK]${NC} $*" >&2; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*" >&2; }
 log_err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+
+build_with_retry() {
+    local description="$1"
+    local max_attempts="$2"
+    local timeout_sec="$3"
+    shift 3
+
+    local attempt=1
+    while [[ $attempt -le $max_attempts ]]; do
+        log_info "$description（第 ${attempt}/${max_attempts} 次）"
+        if timeout "$timeout_sec" "$@"; then
+            return 0
+        else
+            local exit_code=$?
+            if [[ $exit_code -eq 124 ]]; then
+                log_err "$description 超時（${timeout_sec}s）"
+            else
+                log_err "$description 失敗（exit code: $exit_code）"
+            fi
+            if [[ $attempt -lt $max_attempts ]]; then
+                log_warn "${RETRY_INTERVAL} 秒後重試..."
+                sleep "$RETRY_INTERVAL"
+            fi
+            attempt=$((attempt + 1))
+        fi
+    done
+    return 1
+}
 
 check_python3() {
     if ! command -v python3 &>/dev/null; then

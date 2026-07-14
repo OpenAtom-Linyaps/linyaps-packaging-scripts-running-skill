@@ -143,7 +143,8 @@ run_task() {
     local start_time
     start_time=$(date +%s)
 
-    if (cd "$project_dir" && eval "$cmd" > "$log_file" 2>&1); then
+    if build_with_retry "$pkg_name 打包（binary）" "$MAX_BUILD_ATTEMPTS" "$BUILD_TIMEOUT_SEC" \
+        bash -c "cd '$project_dir' && eval '$cmd'" > "$log_file" 2>&1; then
         local end_time
         end_time=$(date +%s)
         local elapsed=$((end_time - start_time))

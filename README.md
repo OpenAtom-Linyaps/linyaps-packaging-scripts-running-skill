@@ -71,7 +71,7 @@ User Task (JSON/CSV)
 │   └── linyaps-packaging-runner.agent.md   # Agent entry point
 ├── agent-config.json                       # Global configuration
 ├── scripts/
-│   ├── common.sh                           # Shared library (14 functions)
+│   ├── common.sh                           # Shared library (15 functions + build constraints)
 │   └── check-agent-status.sh               # Agent health check
 ├── scripts-manifest.json                    # Script distribution map
 ├── skills/
@@ -129,7 +129,7 @@ User Task (JSON/CSV)
 | `agents/linyaps-packaging-runner.agent.md` | **Agent entry** — reads config, groups tasks by `type`, dispatches to sub-skills |
 | `agent-config.json` | Global config: `projects_root`, `output_dir`, `build_tmp_dir`, `src_dir` |
 | `skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh` | **Unified entry point** — accepts CSV or JSON, converts CSV to JSON, triggers agent dispatch |
-| `scripts/common.sh` | Shared library used by all sub-skill scripts (colored output, parse_json, download, arch validation, etc.) |
+| `scripts/common.sh` | Shared library used by all sub-skill scripts (colored output, parse_json, download, arch validation, build retry + timeout, etc.) |
 | `skills/linglong-binary-runner/scripts/run_tasks.sh` | **Binary executor** — downloads sources, validates arch, runs `pak_linyaps.sh` per task |
 | `skills/linglong-source-updater/scripts/run_tasks.sh` | **Source executor** — 6-step pipeline (validate → download+checksum → update YAML → build → export) |
 | `skills/config/arch_mapping.json` | Maps URL arch keywords (`amd64`, `x64`, `aarch64`) to linyaps arch identifiers (`x86_64`, `arm64`) |
@@ -326,7 +326,7 @@ Since CSV files have no `global` section, configuration is provided via:
 - **Entry point**: `pak_linyaps.sh`
 - **Scope**: Pre-adapted packaging projects (project directory contains `pak_linyaps.sh` + `templates/linglong.yaml`)
 - **Sub-skill**: `linglong-binary-runner`
-- **Execution**: Download source → validate arch → locate project → run `pak_linyaps.sh`
+- **Execution**: Download source → validate arch → locate project → run `pak_linyaps.sh` (with retry + timeout)
 - **Constraint**: Must NOT modify `linglong.yaml` or call `ll-builder` directly
 
 ### Source
@@ -334,7 +334,7 @@ Since CSV files have no `global` section, configuration is provided via:
 - **Entry point**: `ll-builder build` + `ll-builder export`
 - **Scope**: Source projects with a `linglong.yaml` (but no `pak_linyaps.sh`)
 - **Sub-skill**: `linglong-source-updater`
-- **Execution**: 6-step pipeline — validate → download+checksum → update YAML → validate output → build → export
+- **Execution**: 6-step pipeline — validate → download+checksum → update YAML → validate output → build → export (with retry + timeout on build/export)
 - **Constraint**: Input `linglong.yaml` must pass pre-validation (no `sources` section); build rules must use `${PREFIX}` paths
 
 ---
@@ -413,6 +413,19 @@ Since CSV files have no `global` section, configuration is provided via:
 ```
 
 Each task produces a log file at `<output_dir>/<pkgName>.log`.
+
+### Build Constraints
+
+Both binary and source builds apply automatic retry and timeout controls, configurable via environment variables:
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `MAX_BUILD_ATTEMPTS` | `2` | Maximum execution attempts per build task (first attempt + 1 retry) |
+| `BUILD_TIMEOUT_SEC` | `1800` | Per-attempt timeout in seconds (30 minutes) |
+
+- **Binary**: The entire `pak_linyaps.sh` invocation is wrapped with retry + timeout.
+- **Source**: Steps S-5 (`ll-builder build`) and S-6 (`ll-builder export`) each have an individual timeout; if S-6 fails, the retry restarts from S-5.
+- Failed attempts wait 10 seconds before retrying.
 
 ---
 
