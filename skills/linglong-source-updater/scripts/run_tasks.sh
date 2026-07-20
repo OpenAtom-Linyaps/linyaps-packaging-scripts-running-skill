@@ -155,12 +155,11 @@ run_source_task() {
         return
     }
 
-    local dl_kind dl_url dl_digest dl_name dl_extracted_dir dl_commit
+    local dl_kind dl_url dl_digest dl_name dl_commit
     dl_kind=$(echo "$source_json" | python3 -c "import json,sys; print(json.load(sys.stdin)['kind'])")
     dl_url=$(echo "$source_json" | python3 -c "import json,sys; print(json.load(sys.stdin)['url'])")
     dl_digest=$(echo "$source_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('digest',''))")
     dl_name=$(echo "$source_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))")
-    dl_extracted_dir=$(echo "$source_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('extracted_dir',''))")
     dl_commit=$(echo "$source_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('commit',''))")
     log_ok "源碼分析完成: kind=$dl_kind, name=$dl_name"
 
@@ -170,8 +169,7 @@ run_source_task() {
         --kind=\"$dl_kind\" \
         --url=\"$dl_url\" \
         --digest=\"$dl_digest\" \
-        --name=\"$dl_name\" \
-        --extracted-dir=\"$dl_extracted_dir\""
+        --name=\"$dl_name\""
     if [[ -n "$dl_commit" ]]; then
         update_cmd="$update_cmd --commit=\"$dl_commit\""
     fi
@@ -196,25 +194,63 @@ run_source_task() {
         return
     fi
 
-    log_info "Step S-5: ll-builder build 開始..."
-    if (cd "$project_dir" && ll-builder build --cache-dir "$task_build_tmp_dir" >> "$log_file" 2>&1); then
-        log_ok "ll-builder build 成功"
-    else
-        log_err "ll-builder build 失敗"
-        FAIL_COUNT=$((FAIL_COUNT + 1))
-        RESULTS+=("$pkg_name: 失敗 (build 失敗)")
-        tail -10 "$log_file" | sed 's/^/  /'
-        return
-    fi
+    local build_phase_ok=false
+    local build_attempt=1
+    while [[ $build_attempt -le $MAX_BUILD_ATTEMPTS ]]; do
+        log_info "Step S-5: ll-builder build 開始（第 ${build_attempt}/${MAX_BUILD_ATTEMPTS} 次）..."
+        if (cd "$project_dir" && timeout "$BUILD_TIMEOUT_SEC" ll-builder build --cache-dir "$task_build_tmp_dir" >> "$log_file" 2>&1); then
+            log_ok "ll-builder build 成功"
+        else
+            local build_exit=$?
+            if [[ $build_exit -eq 124 ]]; then
+                log_err "ll-builder build 超時（${BUILD_TIMEOUT_SEC}s）"
+            else
+                log_err "ll-builder build 失敗"
+            fi
+            tail -10 "$log_file" | sed 's/^/  /'
+            if [[ $build_attempt -lt $MAX_BUILD_ATTEMPTS ]]; then
+                log_warn "構建失敗，${RETRY_INTERVAL} 秒後重試..."
+                sleep "$RETRY_INTERVAL"
+                build_attempt=$((build_attempt + 1))
+                continue
+            fi
+            build_attempt=$((build_attempt + 1))
+            break
+        fi
 
-    log_info "Step S-6: ll-builder export 開始..."
-    if (cd "$project_dir" && ll-builder export --layer --no-develop -z zstd >> "$log_file" 2>&1); then
-        log_ok "ll-builder export 成功"
-    else
-        log_err "ll-builder export 失敗"
+        log_info "Step S-6: ll-builder export 開始（第 ${build_attempt}/${MAX_BUILD_ATTEMPTS} 次）..."
+        if (cd "$project_dir" && timeout "$BUILD_TIMEOUT_SEC" ll-builder export --layer --no-develop -z zstd >> "$log_file" 2>&1); then
+            log_ok "ll-builder export 成功"
+            build_phase_ok=true
+            break
+        else
+            local export_exit=$?
+            if [[ $export_exit -eq 124 ]]; then
+                log_err "ll-builder export 超時（${BUILD_TIMEOUT_SEC}s）"
+            else
+                log_err "ll-builder export 失敗"
+            fi
+            tail -10 "$log_file" | sed 's/^/  /'
+            if [[ $build_attempt -lt $MAX_BUILD_ATTEMPTS ]]; then
+                log_warn "導出失敗，${RETRY_INTERVAL} 秒後重試（從 build 開始）..."
+                sleep "$RETRY_INTERVAL"
+                build_attempt=$((build_attempt + 1))
+                continue
+            fi
+            build_attempt=$((build_attempt + 1))
+            break
+        fi
+    done
+
+    if ! $build_phase_ok; then
+        log_err "構建階段失敗，已重試 ${build_attempt} 次"
         FAIL_COUNT=$((FAIL_COUNT + 1))
-        RESULTS+=("$pkg_name: 失敗 (export 失敗)")
+        RESULTS+=("$pkg_name: 失敗（構建階段）")
         tail -10 "$log_file" | sed 's/^/  /'
+        local end_time
+        end_time=$(date +%s)
+        local elapsed=$((end_time - start_time))
+        log_err "$pkg_name 打包失敗（耗時 ${elapsed}s）"
         return
     fi
 

@@ -21,7 +21,9 @@ import yaml
 
 COMMAND_MUST_BE_LIST = "field 'command' must be a list (not string/null/missing)"
 VERSION_MUST_BE_STR = "field 'version' must be a string"
+VERSION_MUST_BE_NUMERIC = "top-level 'version' must be a single digit string (e.g. '1'), got '{}'"
 PACKAGE_MUST_HAVE = "package must have non-empty 'id', 'name', 'version', 'kind'"
+PACKAGE_VERSION_FORMAT = "package.version must match 'a.b.x.y' pure numeric format (e.g. 5.7.21.0), got '{}'"
 BASE_RUNTIME_REQUIRED = "fields 'base' and 'runtime' must be non-empty strings"
 BUILDEXT_APT_REQUIRED = "buildext.apt must be present"
 DEPS_MUST_BE_LIST = "buildext.apt.{key} must be a list"
@@ -35,11 +37,8 @@ HARDCODED_PREFIX_PATTERNS = [
     re.compile(r'--prefix=/usr(?:/local)?\b'),
     re.compile(r'(?<![-\w])PREFIX=/usr(?:/local)?\b'),
     re.compile(r'(?<![-\w])prefix=/usr(?:/local)?\b'),
-    # autotools subdirectory overrides
     re.compile(r'--(?:libdir|bindir|sbindir|includedir|datarootdir|docdir|mandir|localedir)=/usr'),
-    # cmake subdirectory overrides
     re.compile(r'-DCMAKE_INSTALL_(?:LIBDIR|BINDIR|SBINDIR|INCLUDEDIR|DATADIR|DOCDIR|MANDIR|LOCALEDIR)=/usr'),
-    # qmake
     re.compile(r'(?<![-\w])QMAKE_INSTALL_PREFIX=/usr'),
 ]
 
@@ -56,6 +55,9 @@ SOURCES_REQUIRED_FIELDS = {
     "file": ["kind", "url"],
     "dsc": ["kind", "url", "digest"],
 }
+
+PACKAGE_VERSION_RE = re.compile(r'^\d+\.\d+\.\d+\.\d+$')
+TOPLEVEL_VERSION_RE = re.compile(r'^\d+$')
 
 
 def validate_sources(sources: list) -> list:
@@ -106,6 +108,8 @@ def validate(path: str, allow_sources: bool = False) -> list:
     ver = data.get('version')
     if not isinstance(ver, str) or not ver:
         errors.append(f"{VERSION_MUST_BE_STR} (got {type(ver).__name__}: {ver!r})")
+    elif not TOPLEVEL_VERSION_RE.match(ver):
+        errors.append(VERSION_MUST_BE_NUMERIC.format(ver))
 
     pkg = data.get('package')
     if not isinstance(pkg, dict):
@@ -115,6 +119,9 @@ def validate(path: str, allow_sources: bool = False) -> list:
             val = pkg.get(field)
             if not isinstance(val, str) or not val:
                 errors.append(f"{PACKAGE_MUST_HAVE} (field '{field}' is {val!r})")
+        pkg_ver = pkg.get('version')
+        if isinstance(pkg_ver, str) and pkg_ver and not PACKAGE_VERSION_RE.match(pkg_ver):
+            errors.append(PACKAGE_VERSION_FORMAT.format(pkg_ver))
 
     for field in ('base', 'runtime'):
         val = data.get(field)
@@ -157,11 +164,10 @@ def validate(path: str, allow_sources: bool = False) -> list:
             if re.search(r'\([^)]*\)', dep) or re.search(r'[><=!]', dep):
                 errors.append(NO_VERSION_CONSTRAINT.format(dep=dep))
 
-    # 额外检查：build 段约束
     if isinstance(build_val, str):
         if allow_sources:
-            if "cd /project/linglong/sources/" not in build_val:
-                errors.append("build must contain 'cd /project/linglong/sources/' as first step")
+            if "cd /project/linglong/sources/" not in build_val and "SRC_ROOT" not in build_val:
+                errors.append("build must contain 'cd /project/linglong/sources/' or 'SRC_ROOT' as first step")
             if "touch ${PREFIX}/.linyaps_genius" not in build_val:
                 errors.append("build must contain 'touch ${PREFIX}/.linyaps_genius'")
             if "chmod -R 755 ${PREFIX}" not in build_val:

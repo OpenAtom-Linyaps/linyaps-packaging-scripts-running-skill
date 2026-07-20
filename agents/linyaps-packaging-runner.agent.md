@@ -3,6 +3,7 @@ description: >
   自動執行 linyaps 打包腳本 run_tasks.sh。根據用戶提供的 JSON 或 CSV 任務文件，按 tasks[].type 分派到對應子 SKILL：
   binary（預設）→ linglong-binary-runner，source → linglong-source-updater。
   支援批量執行、狀態上報、架構驗證、版本提取。
+  每個構建任務最多構建 2 次（首次 + 1 次重試），單次構建超時 30 分鐘。
 name: "linyaps-packaging-runner"
 tools:
   read: true
@@ -17,6 +18,14 @@ permission:
 ---
 
 # linyaps 打包任務執行器（Agent）
+
+> **`@MAX_BUILD_ATTEMPTS@` 和 `@BUILD_TIMEOUT_SEC@` 变量声明（单点修改）**
+> 构建任务的重试次数和超时时间由此两个变量全局控制：
+> - `@MAX_BUILD_ATTEMPTS@` = `2` — 每个构建任务最大构建次数（含首次和一次失败重试）
+> - `@BUILD_TIMEOUT_SEC@` = `1800` — 单次构建超时秒数，即 30 分钟
+>
+> **替换规则**：在 bash 脚本中必须使用 `timeout @BUILD_TIMEOUT_SEC@` 包裹构建命令，
+> 失败时自动重试（不超过 `@MAX_BUILD_ATTEMPTS@` 次），重试间隔 10 秒。
 
 根據用戶提供的 JSON 或 CSV 任務文件，按 `tasks[].type` 分派到對應的子 SKILL 執行打包。
 
@@ -190,3 +199,7 @@ for task_type, task_list in tasks_by_type.items():
 - 多架構版本不一致時，優先使用 x86_64 架構的版本
 - 下載資源時處理重定向 URL
 - 資源已存在時跳過重複下載
+
+### 構建約束（由 `@MAX_BUILD_ATTEMPTS@` / `@BUILD_TIMEOUT_SEC@` 控制）
+- **重試次數限制**：每個構建任務最大執行 `@MAX_BUILD_ATTEMPTS@` 次（含首次），首次失敗後允許重試 1 次，重試間隔 10 秒
+- **超時限制**：單次構建超過 `@BUILD_TIMEOUT_SEC@` 秒（30 分鐘）即強制終止，計為超時失敗

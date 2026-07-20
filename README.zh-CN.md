@@ -71,7 +71,7 @@
 │   └── linyaps-packaging-runner.agent.md   # Agent 入口
 ├── agent-config.json                       # 全局配置
 ├── scripts/
-│   ├── common.sh                           # 共享庫（14 個函數）
+│   ├── common.sh                           # 共享庫（15 個函數 + 構建約束）
 │   └── check-agent-status.sh               # Agent 健康檢查
 ├── scripts-manifest.json                    # 脚本位置分布映射表
 ├── skills/
@@ -129,7 +129,7 @@
 | `agents/linyaps-packaging-runner.agent.md` | **Agent 入口** — 讀取配置、按 `type` 分組任務、分派到子 SKILL |
 | `agent-config.json` | 全局配置：`projects_root`、`output_dir`、`build_tmp_dir`、`src_dir` |
 | `skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh` | **統一入口** — 接受 CSV 或 JSON，轉換後觸發 Agent 分派 |
-| `scripts/common.sh` | 所有子 SKILL 共享的函數庫（顏色輸出、parse_json、下載、架構驗證等） |
+| `scripts/common.sh` | 所有子 SKILL 共享的函數庫（顏色輸出、parse_json、下載、架構驗證、構建重試與超時等） |
 | `skills/linglong-binary-runner/scripts/run_tasks.sh` | **Binary 執行器** — 下載 → 架構驗證 → 執行 `pak_linyaps.sh` |
 | `skills/linglong-source-updater/scripts/run_tasks.sh` | **Source 執行器** — 6 步驟管線（驗證 → 下載校驗 → 更新 YAML → 構建 → 導出） |
 | `skills/config/arch_mapping.json` | URL 架構關鍵字（`amd64`、`x64`、`aarch64`）映射到 linyaps 架構（`x86_64`、`arm64`） |
@@ -326,7 +326,7 @@ CSV 文件必須使用 UTF-8 編碼，並包含以下表頭行：
 - **入口**：`pak_linyaps.sh`
 - **範圍**：已適配打包腳本的項目（目錄下包含 `pak_linyaps.sh` + `templates/linglong.yaml`）
 - **子 SKILL**：`linglong-binary-runner`
-- **流程**：下載 → 架構驗證 → 定位項目 → 執行 `pak_linyaps.sh`
+- **流程**：下載 → 架構驗證 → 定位項目 → 執行 `pak_linyaps.sh`（含重試與超時）
 - **約束**：嚴禁改寫 `linglong.yaml` 或直接調用 `ll-builder`
 
 ### Source（源碼）
@@ -334,7 +334,7 @@ CSV 文件必須使用 UTF-8 編碼，並包含以下表頭行：
 - **入口**：`ll-builder build` + `ll-builder export`
 - **範圍**：含 `linglong.yaml` 但無 `pak_linyaps.sh` 的源碼項目
 - **子 SKILL**：`linglong-source-updater`
-- **流程**：6 步驟管線 — 驗證 → 下載校驗 → 更新 YAML → 驗證輸出 → 構建 → 導出
+- **流程**：6 步驟管線 — 驗證 → 下載校驗 → 更新 YAML → 驗證輸出 → 構建 → 導出（構建/導出含重試 + 超時）
 - **約束**：輸入的 `linglong.yaml` 必須通過預驗證（無 sources 段）；build 規則必須使用 `${PREFIX}` 路徑
 
 ---
@@ -413,6 +413,19 @@ CSV 文件必須使用 UTF-8 編碼，並包含以下表頭行：
 ```
 
 每個任務會在 `<output_dir>/<pkgName>.log` 生成日誌文件。
+
+### 構建約束
+
+Binary 和 Source 構建均使用自動重試與超時控制，可通過環境變量配置：
+
+| 變量 | 預設值 | 說明 |
+|------|--------|------|
+| `MAX_BUILD_ATTEMPTS` | `2` | 每個構建任務的最大執行次數（首次嘗試 + 1 次重試） |
+| `BUILD_TIMEOUT_SEC` | `1800` | 每次嘗試的超時秒數（30 分鐘） |
+
+- **Binary**：整個 `pak_linyaps.sh` 調用包裹重試 + 超時。
+- **Source**：S-5（`ll-builder build`）和 S-6（`ll-builder export`）各自有獨立超時；S-6 失敗時重試從 S-5 重新開始。
+- 失敗嘗試等待 10 秒後重試。
 
 ---
 
