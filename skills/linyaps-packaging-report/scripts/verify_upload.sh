@@ -4,7 +4,7 @@
 # 用途：rclone上传后，通过wget下载验证文件是否可访问且有数据传输
 # 逻辑：5秒内有下载进度表示上传成功，否则视为失败
 #
-# 用法：bash ./scripts/verify_upload.sh <file_url> [timeout]
+# 用法：bash skills/linyaps-multica-packer-dispatch/scripts/verify_upload.sh <file_url> [timeout]
 #
 # 参数：
 #   $1  file_url — 要验证的文件URL
@@ -15,8 +15,8 @@
 #   1 — 验证失败（超时或无进度）
 #
 # 示例：
-#   bash ./scripts/verify_upload.sh "https://example.com/file.layer"
-#   bash ./scripts/verify_upload.sh "https://example.com/file.layer" 10
+#   bash skills/linyaps-multica-packer-dispatch/scripts/verify_upload.sh "https://example.com/file.layer"
+#   bash skills/linyaps-multica-packer-dispatch/scripts/verify_upload.sh "https://example.com/file.layer" 10
 
 set -e
 

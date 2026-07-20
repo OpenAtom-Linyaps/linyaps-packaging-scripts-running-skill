@@ -7,7 +7,7 @@ description: >
   (2) dispatch_project_not_found — 项目未适配时向 init-tracker / linyaps-src-init 发起指派；
   (3) update_issue_status — 汇总后更新 issue 状态。
   不适用于其他节点类型（init-tracker、linyaps-src-init 等）。
-argument-hint: '<action> <params>'
+argument-hint: '<action> <params> [agent_config_path]'
 user-invocable: false
 ---
 
@@ -21,6 +21,8 @@ user-invocable: false
 - 配置来源：`for-multica/agent-config.json` 的 `assignment` 区段
 - 本 skill 脚本：`skills/linyaps-multica-packer-dispatch/scripts/`
 
+**配置接收**：`agent_config_path` 由调用方通过 `skill()` 传入，本 skill 将其映射为 `--config=<path>`（或 `--agent-config-path=<path>`）参数传递给 `dispatch.sh` 脚本。
+
 ## 三种 Action 接口
 
 ### Action 1: `detect_init_source`
@@ -32,7 +34,8 @@ user-invocable: false
 **输入**：
 ```json
 {
-  "action": "detect_init_source"
+  "action": "detect_init_source",
+  "agent_config_path": "for-multica/agent-config.json"
 }
 ```
 
@@ -65,6 +68,7 @@ user-invocable: false
 ```json
 {
   "action": "dispatch_project_not_found",
+  "agent_config_path": "for-multica/agent-config.json",
   "pkgName": "com.example.app",
   "src_url": "https://example.com/app_1.0_amd64.deb",
   "arch": "x86_64",
@@ -124,6 +128,7 @@ user-invocable: false
 ```json
 {
   "action": "update_issue_status",
+  "agent_config_path": "for-multica/agent-config.json",
   "success_count": 8,
   "fail_count": 1,
   "pending_count": 2,

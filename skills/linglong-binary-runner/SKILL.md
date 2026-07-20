@@ -1,7 +1,7 @@
 ---
 name: linglong-binary-runner
 description: '透過 pak_linyaps.sh 自動執行 linyaps 二進制打包。用於已適配便捷打包腳本的項目（特徵：目錄下有 pak_linyaps.sh），不感知 linglong.yaml。使用場景：批量執行 JSON/CSV 任務中的 binary 類型打包。'
-argument-hint: '<task.json>'
+argument-hint: '<task.json> [--agent-config-path=<path>]'
 user-invocable: false
 ---
 
@@ -18,7 +18,7 @@ user-invocable: false
 
 ## 輸入
 
-標準任務 JSON，`tasks[].type` 為 `binary` 或未指定：
+標準任務 JSON，`tasks[].type` 為 `binary` 或未指定，並可選傳入 `--agent-config-path=<path>` 指定 `agent-config.json` 路徑：
 
 ```json
 {

@@ -1,14 +1,29 @@
 #!/bin/bash
 # linyaps source 打包執行器 — 透過 ll-builder 執行源碼編譯打包
-# 用法: ./run_tasks.sh <task.json>
+# 用法: ./run_tasks.sh <task.json> [--agent-config-path=<path>]
 # 依賴: scripts/common.sh（共享庫）, download-and-checksum.sh, update-linglong-yaml.py, validate-linglong-yaml.py
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-TASK_FILE="${1:?用法: $0 <task.json>}"
-CONFIG_FILE="${REPO_ROOT}/agent-config.json"
+
+AGENT_CONFIG_PATH=""
+TASK_FILE=""
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --agent-config-path=*) AGENT_CONFIG_PATH="${1#*=}"; shift ;;
+    *) TASK_FILE="$1"; shift ;;
+  esac
+done
+
+if [[ -z "$TASK_FILE" ]]; then
+  echo "用法: $0 <task.json> [--agent-config-path=<path>]" >&2
+  exit 1
+fi
+
+CONFIG_FILE="${AGENT_CONFIG_PATH:-${REPO_ROOT}/agent-config.json}"
 
 source "$SCRIPT_DIR/common.sh"
 

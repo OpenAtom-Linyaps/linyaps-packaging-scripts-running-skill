@@ -72,11 +72,8 @@
 ├── agent-config.json                       # 全局配置
 ├── scripts/
 │   ├── common.sh                           # 共享庫（14 個函數）
-│   ├── csv_to_json.sh                      # CSV 轉 JSON & 統一入口
-│   ├── query_upstream.sh                   # 上游信息查詢
-│   ├── status_upload.sh                    # 產物上傳
 │   └── check-agent-status.sh               # Agent 健康檢查
-├── scripts-manifest.json                    # 脚本副本分布映射表
+├── scripts-manifest.json                    # 脚本位置分布映射表
 ├── skills/
 │   ├── config/
 │   │   └── arch_mapping.json               # URL 架構關鍵字 → linyaps arch
@@ -96,11 +93,25 @@
 │       │   └── validate-linglong-yaml.py   # 雙模式 YAML 驗證器
 │       └── references/
 │           └── manifests-for-yaml.md       # linglong.yaml 字段規範
+│   ├── linyaps-packaging-precheck/          # 前置環境檢測 SKILL
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       ├── common.sh                   # 共享庫（副本）
+│   │       ├── precheck.sh                 # 統一前置檢測
+│   │       └── query_upstream.sh           # 上游信息查詢
+│   ├── linyaps-packaging-report/            # 產物上傳與狀態回報 SKILL
+│   │   ├── SKILL.md
+│   │   └── scripts/
+│   │       ├── common.sh                   # 共享庫（副本）
+│   │       ├── status_upload.sh            # 產物上傳（常規）
+│   │       ├── status_upload_initOnly.sh   # 產物上傳（初始化後首次打包）
+│   │       └── verify_upload.sh            # 上傳驗證
 │   └── linyaps-multica-packer-dispatch/     # Multica 分發子 SKILL
 │       ├── SKILL.md
 │       └── scripts/
 │           ├── common.sh                   # 共享庫（副本）
 │           ├── check-agent-status.sh        # Agent 健康檢查（副本）
+│           ├── csv_to_json.sh              # CSV 轉 JSON & 統一入口
 │           ├── detect_init_source.sh        # 初始化來源檢測
 │           └── dispatch.sh                 # 分發編排器
 ├── for-multica/
@@ -117,34 +128,42 @@
 |------|------|
 | `agents/linyaps-packaging-runner.agent.md` | **Agent 入口** — 讀取配置、按 `type` 分組任務、分派到子 SKILL |
 | `agent-config.json` | 全局配置：`projects_root`、`output_dir`、`build_tmp_dir`、`src_dir` |
-| `scripts/csv_to_json.sh` | **統一入口** — 接受 CSV 或 JSON，轉換後觸發 Agent 分派 |
+| `skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh` | **統一入口** — 接受 CSV 或 JSON，轉換後觸發 Agent 分派 |
 | `scripts/common.sh` | 所有子 SKILL 共享的函數庫（顏色輸出、parse_json、下載、架構驗證等） |
 | `skills/linglong-binary-runner/scripts/run_tasks.sh` | **Binary 執行器** — 下載 → 架構驗證 → 執行 `pak_linyaps.sh` |
 | `skills/linglong-source-updater/scripts/run_tasks.sh` | **Source 執行器** — 6 步驟管線（驗證 → 下載校驗 → 更新 YAML → 構建 → 導出） |
 | `skills/config/arch_mapping.json` | URL 架構關鍵字（`amd64`、`x64`、`aarch64`）映射到 linyaps 架構（`x86_64`、`arm64`） |
-| `scripts-manifest.json` | 脚本副本分布映射表 — 记录各 skill 对根级 `scripts/` 中脚本的副本持有情况 |
+| `scripts-manifest.json` | 脚本位置分布映射表 — 记录各 skill 的脚本持有情况 |
 | `task-example.json` | JSON 任務文件範例，包含 binary 和 source 兩種類型 |
 
 ---
 
-## 脚本副本分布
+## 脚本分布
 
-根目录下的 [`scripts/`](scripts/) 是所有共享脚本的**权威来源**。各 skill 在各自
-`<skill>/scripts/` 目录下维护独立副本，以确保在 Multica 平台（仅安装 skill 目录而非整个仓库）
-上能够**自包含部署**。
+根目录下的 [`scripts/`](scripts/) 目录仅包含**共享库**脚本
+（`common.sh`、`check-agent-status.sh`）。业务脚本按 workflow 阶段
+归属对应 skill：
 
-> **维护规则**：当根级 `scripts/` 中的共享脚本更新时，必须同步更新到所有持有副本的 skill。
+- **前置检测**（`linyaps-packaging-precheck`）：环境检测 + 上游数据查询
+- **打包执行**（`linglong-binary-runner` / `linglong-source-updater`）：构建执行
+- **状态上报**（`linyaps-packaging-report`）：产物流传 + 状态回传
+- **指派分发**（`linyaps-multica-packer-dispatch`）：Multica 平台指派逻辑
+
+> **维护规则**：各 skill 的 scripts 目录是其脚本的唯一权威来源。
 > 完整的映射关系见 [`scripts-manifest.json`](scripts-manifest.json)。
 
-| 脚本 | 根目录（权威） | linglong-binary-runner | linglong-source-updater | linyaps-multica-packer-dispatch |
-|--------|:---:|:---:|:---:|:---:|
-| `common.sh` | ✅ | ✅ | ✅ | ✅ |
-| `csv_to_json.sh` | ✅ | — | — | — |
-| `query_upstream.sh` | ✅ | — | — | — |
-| `status_upload.sh` | ✅ | — | — | — |
-| `status_upload_initOnly.sh` | ✅ | — | — | — |
-| `verify_upload.sh` | ✅ | — | — | — |
-| `check-agent-status.sh` | ✅ | — | — | ✅ |
+| 脚本 | 根目录（权威） | linglong-binary-runner | linglong-source-updater | linyaps-packaging-precheck | linyaps-packaging-report | linyaps-multica-packer-dispatch |
+|--------|:---:|:---:|:---:|:---:|:---:|:---:|
+| `common.sh` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `check-agent-status.sh` | ✅ | — | — | — | — | ✅ |
+| `csv_to_json.sh` | — | — | — | — | — | ✅ |
+| `precheck.sh` | — | — | — | ✅ | — | — |
+| `query_upstream.sh` | — | — | — | ✅ | — | — |
+| `status_upload.sh` | — | — | — | — | ✅ | — |
+| `status_upload_initOnly.sh` | — | — | — | — | ✅ | — |
+| `verify_upload.sh` | — | — | — | — | ✅ | — |
+| `detect_init_source.sh` | — | — | — | — | — | ✅ |
+| `dispatch.sh` | — | — | — | — | — | ✅ |
 
 ### 各 Skill 脚本清单
 
@@ -152,7 +171,9 @@
 |------------|-------------------------------|------------------------|
 | `skills/linglong-binary-runner/scripts/` | `common.sh` | `run_tasks.sh`, `validate_projects.sh` |
 | `skills/linglong-source-updater/scripts/` | `common.sh` | `run_tasks.sh`, `download-and-checksum.sh`, `update-linglong-yaml.py`, `validate-linglong-yaml.py` |
-| `skills/linyaps-multica-packer-dispatch/scripts/` | `common.sh`, `check-agent-status.sh` | `detect_init_source.sh`, `dispatch.sh` |
+| `skills/linyaps-packaging-precheck/scripts/` | `common.sh` | `precheck.sh`, `query_upstream.sh` |
+| `skills/linyaps-packaging-report/scripts/` | `common.sh` | `status_upload.sh`, `status_upload_initOnly.sh`, `verify_upload.sh` |
+| `skills/linyaps-multica-packer-dispatch/scripts/` | `common.sh`, `check-agent-status.sh` | `csv_to_json.sh`, `detect_init_source.sh`, `dispatch.sh` |
 
 ---
 
@@ -164,10 +185,10 @@
 # 1. 準備 CSV 文件，表頭為：记录ID,包名,架构,版本,网站地址,下载地址
 
 # 2. 預覽生成的 JSON（dry-run 模式）
-./scripts/csv_to_json.sh my-tasks.csv --dry-run
+./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh my-tasks.csv --dry-run
 
 # 3. 使用已適配的項目執行打包
-./scripts/csv_to_json.sh my-tasks.csv \
+./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh my-tasks.csv \
   --projects_root=/path/to/adapted/projects
 ```
 
@@ -175,7 +196,7 @@
 
 ```bash
 # 直接使用 JSON 任務文件（包含 type=binary 或 type=source 任務）
-./scripts/csv_to_json.sh task-example.json
+./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh task-example.json
 ```
 
 > **注意：** 使用 `csv_to_json.sh` 作為入口保持向後兼容 — 它會自動識別 JSON 文件並傳遞給 Agent 分派。
@@ -278,14 +299,14 @@ CSV 文件必須使用 UTF-8 編碼，並包含以下表頭行：
 
 1. **命令行參數**（優先級最高）：
    ```bash
-   ./scripts/csv_to_json.sh tasks.csv \
+   ./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh tasks.csv \
      --projects_root=/path/to/projects \
      --output_dir=./output
    ```
 
 2. **JSON 配置文件**（`--config`）：
    ```bash
-   ./scripts/csv_to_json.sh tasks.csv --config=global_config.json
+   ./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh tasks.csv --config=global_config.json
    ```
 
 3. **預設值**（優先級最低）：
@@ -325,7 +346,7 @@ CSV 文件必須使用 UTF-8 編碼，並包含以下表頭行：
 **統一入口** — 接受 CSV 和 JSON 文件，轉換 CSV 為 JSON，觸發 Agent 分派流程。
 
 ```
-./scripts/csv_to_json.sh <task.csv|task.json> [options]
+./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh <task.csv|task.json> [options]
 ```
 
 | 參數 | 預設值 | 說明 |

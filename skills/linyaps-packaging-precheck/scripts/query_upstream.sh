@@ -4,10 +4,10 @@
 # 輸出兼容 run_tasks.sh 的完整任務 JSON
 #
 # 用法:
-#   單包查詢:  ./scripts/query_upstream.sh --pkg-name=net.kuribo64.melonDS
-#   批量查詢:  ./scripts/query_upstream.sh --task-file=tasks.json
-#   管道輸入:  cat pkglist.txt | ./scripts/query_upstream.sh
-#   完整輸出:  ./scripts/query_upstream.sh --pkg-name=xxx --global-config=cfg.json --output=full.json
+#   單包查詢:  ./skills/linyaps-packaging-precheck/scripts/query_upstream.sh --pkg-name=net.kuribo64.melonDS
+#   批量查詢:  ./skills/linyaps-packaging-precheck/scripts/query_upstream.sh --task-file=tasks.json
+#   管道輸入:  cat pkglist.txt | ./skills/linyaps-packaging-precheck/scripts/query_upstream.sh
+#   完整輸出:  ./skills/linyaps-packaging-precheck/scripts/query_upstream.sh --pkg-name=xxx --global-config=cfg.json --output=full.json
 
 set -euo pipefail
 
@@ -48,16 +48,16 @@ show_help() {
 
 用法:
   # 單包查詢
-  ./scripts/query_upstream.sh --pkg-name=<pkgName>
+  ./skills/linyaps-packaging-precheck/scripts/query_upstream.sh --pkg-name=<pkgName>
 
   # 批量查詢（從 JSON 或純文本文件讀取 pkgName 列表）
-  ./scripts/query_upstream.sh --task-file=<tasks.json|pkglist.txt>
+  ./skills/linyaps-packaging-precheck/scripts/query_upstream.sh --task-file=<tasks.json|pkglist.txt>
 
   # 管道輸入（每行一個包名）
-  echo "net.kuribo64.melonDS" | ./scripts/query_upstream.sh
+  echo "net.kuribo64.melonDS" | ./skills/linyaps-packaging-precheck/scripts/query_upstream.sh
 
   # 指定 global 配置 + 輸出到文件
-  ./scripts/query_upstream.sh --task-file=tasks.json \
+  ./skills/linyaps-packaging-precheck/scripts/query_upstream.sh --task-file=tasks.json \
     --global-config=agent-config.json --output=full-tasks.json
 
 選項:
