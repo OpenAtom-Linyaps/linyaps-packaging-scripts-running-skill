@@ -66,7 +66,7 @@ else
 fi
 
 echo "   reporting status: $pakStatus"
-curl -q "https://cooperation.uniontech.com/api/workflow/hooks/NmEzMGZlNDlmNzE3ZmIyMmIwZjVlODQ2?linyapsPkgName=$linyapsPkgName&linyapsPkgArch=$linyapsPkgArch&pakStatus=$pakStatus&upstreamVer=$upstreamVer&linyapsPkgVer=$linyapsPkgVer&linyapsPkgUrl=$linyapsPkgUrl"
+curl -q "https://cooperation.uniontech.com/api/workflow/hooks/NmEzZDFjMGQxMDM5YjQ1YWRlNGE2OWFh?linyapsPkgName=$linyapsPkgName&linyapsPkgArch=$linyapsPkgArch&pakStatus=$pakStatus&upstreamVer=$upstreamVer&linyapsPkgVer=$linyapsPkgVer&linyapsPkgUrl=$linyapsPkgUrl"
 
 
 echo "done"
