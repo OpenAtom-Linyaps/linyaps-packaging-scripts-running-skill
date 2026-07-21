@@ -103,12 +103,13 @@ user-invocable: false
    - `idle` → 记录"目标空闲，可立即指派"
    - `busy` → 记录警告"目标繁忙，仍发起指派（由平台排队）"，**不阻断**
    - 脚本报错 → 记录警告"无法查询状态，直接发起指派"，**不阻断**
-3. **指派执行**：通过 `multica issue comment add` 发送 mention 评论：
+3. **指派执行**：通过 `multica issue comment add` 发送 `@mention` 评论，再通过 `multica issue assign` 将 issue 指派给目标 agent：
    ```bash
    ISSUE_ID=$(multica issue list --limit 10 | grep -oP 'issue-\d+' | head -1)
    if [ -n "$ISSUE_ID" ]; then
      multica issue comment add "$ISSUE_ID" \
        --content "@${TARGET_AGENT_ID} 请为 ${pkgName} 进行项目初始化适配工作（${arch}）。下载地址：${src_url}"
+     multica issue assign "$ISSUE_ID" --to "${TARGET_AGENT_ID}"
    fi
    ```
 4. **记录指派日志**：写入 `data_dir/assignment.log`：

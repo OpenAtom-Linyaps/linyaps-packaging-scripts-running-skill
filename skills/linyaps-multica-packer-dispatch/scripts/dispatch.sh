@@ -155,9 +155,19 @@ except Exception:
     if [[ -n "$ISSUE_ID" ]]; then
       TYPE_TAG=""
       [[ "$TYPE" == "source" ]] && TYPE_TAG="，類型：source"
+
+      # Step 1: 发送 @ 提及评论（通知 agent）
       multica issue comment add "$ISSUE_ID" \
         --content "@${TARGET_AGENT_ID} 請為 ${PKG_NAME} 進行項目初始化適配工作（${ARCH}）。下載地址：${SRC_URL}${TYPE_TAG}" \
-        2>/dev/null && ASSIGNED=true || log_warn "multica comment 发送失败"
+        2>/dev/null || log_warn "multica comment 发送失败"
+
+      # Step 2: 指派 issue 给目标 agent（assign 负责人）
+      if multica issue assign "$ISSUE_ID" --to "$TARGET_AGENT_ID" \
+        2>/dev/null; then
+        ASSIGNED=true
+      else
+        log_warn "multica assign 失败"
+      fi
     else
       log_warn "无法查询 ISSUE_ID，跳过指派"
     fi
