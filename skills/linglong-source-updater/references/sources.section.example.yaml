@@ -1,0 +1,20 @@
+version: "5.6.1.3"
+package:
+  id: "uos.app.minetest"
+  name: "minetest"
+  version: "5.6.1.3"
+  kind: app
+  architecture: x86_64
+  description: "Multiplayer infinite-world block sandbox"
+
+base: org.deepin.base/25.2.2
+runtime: org.deepin.runtime.dtk/25.2.2
+sources:
+- kind: archive
+  url: https://share.cicd.getdeepin.org/ziggy-pool/linyaps-apps-packaging-CI/260722-init.src/minetest_5.6.1+dfsg+~1.9.0mt8+dfsg.orig.tar.gz
+  digest: a54f62cbfcf7a09a3ad633289c6cab8a877e7dfc2c8d0a0d75ebed58107f6aaa
+  name: src
+- kind: archive
+  url: https://share.cicd.getdeepin.org/ziggy-pool/linyaps-apps-packaging-CI/260722-init.src/minetest_5.6.1+dfsg+~1.9.0mt8+dfsg-2.debian.tar.xz
+  digest: 2a596f8173967331b88b20019a5e4beeb5b0e0d592f2d8540c3bb7eb57970393
+  name: debian

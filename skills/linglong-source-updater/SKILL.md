@@ -4,6 +4,8 @@ description: '更新已初始化的 linglong.yaml，補充上游源碼信息，�
 argument-hint: '<task.json> [--agent-config-path=<path>]'
 references:
   - references/manifests-for-yaml.md
+  - references/sources.section.example.yaml
+  - references/build.section.example.yaml
 user-invocable: false
 ---
 
@@ -72,5 +74,6 @@ user-invocable: false
 - 輸入的 `linglong.yaml` 必須通過 validate 檢測（無 sources 段）
 - `build` 段必須包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
 - `${PREFIX} 安裝目錄約束`：`build` 段中所有安裝目錄參數出現 `/usr` 或 `/usr/local` 絕對路徑均為錯誤（如 `--prefix=/usr`、`--libdir=/usr/lib`、`-DCMAKE_INSTALL_LIBDIR=/usr/lib`、`QMAKE_INSTALL_PREFIX=/usr`），必須以 `${PREFIX}` 替代；系統命令中的 `/usr` 除外
-- `build` 第一个步骤必须进入源码目录，使用 `export SRC_ROOT=$(ls -d /project/linglong/sources/<name>/*)` 动态发现后 `cd ${SRC_ROOT}`（适用于 archive/git/dsc）。`<name>` 对应 sources 段的 `name` 属性。
-> 参考示例：`examples/CI_ll_org.mamedev.mamedev.linglong.yaml` L132-L134
+- `build` 第一个步骤必须进入源码目录，使用 `export SRC_ROOT=$(ls -d /project/linglong/sources/<name>/*)` 动态发现后 `cd ${SRC_ROOT}`（适用于 archive/git/dsc）。`<name>` 对应 sources 段的 `name` 属性，必须与 sources 条目中的 name 值一致。
+- `sources` 段的 `digest` 字段必须为纯数值格式（如 `a54f62cbfcf7a09a3ad633...`），不得包含 `sha256:` 等加密方法前缀。
+> 参考示例：`references/build.section.example.yaml` L15-L17

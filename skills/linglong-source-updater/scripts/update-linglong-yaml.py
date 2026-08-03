@@ -178,10 +178,10 @@ def main():
                         help="Write to linglong.yaml.patched instead")
     args = parser.parse_args()
 
-    # normalize digest: strip sha256: prefix if present, or add it
+    # normalize digest: strip sha256: prefix if present, keep pure numeric
     digest = args.digest
-    if digest and not digest.startswith("sha256:"):
-        digest = f"sha256:{digest}"
+    if digest and digest.startswith("sha256:"):
+        digest = digest[len("sha256:"):]
 
     update_linglong_yaml(
         project_dir=args.path,
