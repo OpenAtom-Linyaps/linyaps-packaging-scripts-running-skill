@@ -1,7 +1,6 @@
 ---
 name: linglong-source-updater
-description: '更新已初始化的 linglong.yaml，補充上游源碼信息，更新構建規則，並自動打包為玲瓏 layer。用於 source 類型任務（特徵：目錄下有 linglong.yaml 但缺少 sources 段）。支援 archive/git/file/dsc 四種源碼類型。'
-argument-hint: '<task.json> [--agent-config-path=<path>]'
+description: '更新已初始化的 linglong.yaml，補充上游源碼信息，更新構建規則。用於 source 類型任務（特徵：目錄下有 linglong.yaml 但缺少 sources 段）。支援 archive/git/file/dsc 四種源碼類型。'
 references:
   - references/manifests-for-yaml.md
   - references/sources.section.example.yaml
@@ -15,36 +14,31 @@ user-invocable: false
 
 ## 目錄約定
 
-- 執行腳本：`skills/linglong-source-updater/scripts/run_tasks.sh`
 - 下載校驗腳本：`skills/linglong-source-updater/scripts/download-and-checksum.sh`
-- YAML 更新腳本：`skills/linglong-source-updater/scripts/update-linglong-yaml.py`
+- YAML 更新腳本（可選輔助）：`skills/linglong-source-updater/scripts/update-linglong-yaml.py`
 - 格式驗證腳本：`skills/linglong-source-updater/scripts/validate-linglong-yaml.py`
 - 字段規範參考：`skills/linglong-source-updater/references/manifests-for-yaml.md`
 - 共享庫：`skills/linglong-source-updater/scripts/common.sh`
 - 架構映射：`skills/config/arch_mapping.json`
 
+> **注意**：`run_tasks.sh` 已棄用，不再使用。原因見下方說明。
+
 ## 使用前提
 
 - 目標項目目錄下存在 `linglong.yaml`，且格式正確、無 sources 段
-- `build` 字段中必須包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`（腳本會自動追加）
+- `build` 字段中必須包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
 - `build` 段中所有安裝目錄參數出現 `/usr` 或 `/usr/local` 絕對路徑均為錯誤：
   - `--prefix=/usr` / `--libdir=/usr/lib` / `--bindir=/usr/bin`
   - `-DCMAKE_INSTALL_PREFIX=/usr` / `-DCMAKE_INSTALL_LIBDIR=/usr/lib`
   - `QMAKE_INSTALL_PREFIX=/usr`
   - 以上均須以 `${PREFIX}` 替代（系統命令如 `apt-get`、`dpkg` 中的 `/usr` 除外）
-- 環境依賴：`ll-builder`、`python3-ruamel.yaml`、`python3-yaml`
 
 ## 輸入
 
-標準任務 JSON，`tasks[].type` 為 `source`，並可選傳入 `--agent-config-path=<path>` 指定 `agent-config.json` 路徑：
+標準任務 JSON，`tasks[].type` 為 `source`：
 
 ```json
 {
-  "global": {
-    "projects_root": "/path/to/projects",
-    "build_tmp_dir": "./build_cache",
-    "src_dir": "./src"
-  },
   "tasks": [
     {
       "pkgName": "com.example.sourceapp",
@@ -59,21 +53,54 @@ user-invocable: false
 }
 ```
 
-## 執行流程（6 步驟）
+## 執行流程
 
-- **S-1**：輸入驗證 — `validate-linglong-yaml.py`（不帶 `--allow-sources`）
-- **S-2**：源碼分析 — `download-and-checksum.sh` 下載源碼、計算 sha256、分析目錄
-- **S-3**：YAML 更新 — `update-linglong-yaml.py` 插入 sources 段、修正 build
-- **S-4**：輸出驗證 — `validate-linglong-yaml.py`（帶 `--allow-sources`）
-- **S-5**：構建 — `ll-builder build`
-- **S-6**：導出 — `ll-builder export --layer --no-develop -z zstd`，移動 .layer 到 output_dir
+### 1. 源碼下載與分析
+
+調用 `download-and-checksum.sh` 下載源碼並計算摘要：
+
+```bash
+bash scripts/download-and-checksum.sh <src_url> <kind> <name> [commit]
+```
+
+輸出 JSON 格式結果，包含 `kind`、`url`、`digest`、`name`、`commit` 等字段。
+
+### 2. 編輯 linglong.yaml
+
+根據上一步的 JSON 輸出，手動編輯項目目錄下的 `linglong.yaml`：
+
+- 更新 `package.version` 為最新版本號
+- 添加 `sources` 段，包含 `kind`、`url`、`digest`（archive/dsc）或 `commit`（git）
+- 確保 `build` 段：
+  - 第一行進入源碼目錄：`export SRC_ROOT=$(ls -d /project/linglong/sources/<name>/*)` 後 `cd ${SRC_ROOT}`
+  - 所有安裝路徑使用 `${PREFIX}` 而非硬編碼的 `/usr` 或 `/usr/local`
+  - 包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
+- `sources` 段的 `digest` 字段必須為純數值格式（如 `a54f62cbfcf7a09a3ad633...`），不得包含 `sha256:` 等前綴
+
+可選：使用 `update-linglong-yaml.py` 輔助生成 sources 段內容，但推薦手動編輯以確保準確性。
+
+### 3. 驗證
+
+調用 `validate-linglong-yaml.py` 檢查 YAML 格式：
+
+```bash
+python3 scripts/validate-linglong-yaml.py <project_dir>/linglong.yaml --allow-sources
+```
+
+### 4. 構建
+
+告知用戶手動進入項目目錄執行：
+
+```bash
+cd <project_dir>
+ll-builder build --skip-output-check
+```
 
 ## 約束
 
-- 使用 `ll-builder build` + `ll-builder export` 進行源碼編譯打包，不依賴 `pak_linyaps.sh`
-- 輸入的 `linglong.yaml` 必須通過 validate 檢測（無 sources 段）
+- 不使用 `run_tasks.sh`：該腳本內部通過 `common.sh` 引入 `find_project_dir()` 函數，該函數依賴 `pak_linyaps.sh` 文件存在來定位項目目錄，不適用於源碼項目（源碼項目應以 `linglong.yaml` 為標識）
+- `build` 第一個步驟必須進入源碼目錄，使用 `export SRC_ROOT=$(ls -d /project/linglong/sources/<name>/*)` 動態發現後 `cd ${SRC_ROOT}`
 - `build` 段必須包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
-- `${PREFIX} 安裝目錄約束`：`build` 段中所有安裝目錄參數出現 `/usr` 或 `/usr/local` 絕對路徑均為錯誤（如 `--prefix=/usr`、`--libdir=/usr/lib`、`-DCMAKE_INSTALL_LIBDIR=/usr/lib`、`QMAKE_INSTALL_PREFIX=/usr`），必須以 `${PREFIX}` 替代；系統命令中的 `/usr` 除外
-- `build` 第一个步骤必须进入源码目录，使用 `export SRC_ROOT=$(ls -d /project/linglong/sources/<name>/*)` 动态发现后 `cd ${SRC_ROOT}`（适用于 archive/git/dsc）。`<name>` 对应 sources 段的 `name` 属性，必须与 sources 条目中的 name 值一致。
-- `sources` 段的 `digest` 字段必须为纯数值格式（如 `a54f62cbfcf7a09a3ad633...`），不得包含 `sha256:` 等加密方法前缀。
-> 参考示例：`references/build.section.example.yaml` L15-L17
+- `${PREFIX}` 安裝目錄約束同上
+- `sources` 段的 `digest` 字段不得包含 `sha256:` 等加密方法前綴
+- 參考示例：`references/build.section.example.yaml`、`references/sources.section.example.yaml`

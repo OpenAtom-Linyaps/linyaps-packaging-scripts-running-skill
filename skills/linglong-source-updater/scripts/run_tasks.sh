@@ -1,5 +1,9 @@
 #!/bin/bash
-# linyaps source 打包執行器 — 透過 ll-builder 執行源碼編譯打包
+# [已棄用] linyaps source 打包執行器 — 透過 ll-builder 執行源碼編譯打包
+# 此腳本已棄用，不再使用。
+# 棄用原因：內部透過 common.sh 引入 find_project_dir() 函數，該函數依賴 pak_linyaps.sh
+# 文件存在來定位項目目錄，不適用於源碼項目（源碼項目應以 linglong.yaml 為標識）。
+# 請改用 SKILL.md 中描述的 LLM 驅動工作流。
 # 用法: ./run_tasks.sh <task.json> [--agent-config-path=<path>]
 # 依賴: scripts/common.sh（共享庫）, download-and-checksum.sh, update-linglong-yaml.py, validate-linglong-yaml.py
 
