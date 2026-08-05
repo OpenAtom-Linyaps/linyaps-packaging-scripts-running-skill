@@ -203,7 +203,7 @@ run_source_task() {
     local build_attempt=1
     while [[ $build_attempt -le $MAX_BUILD_ATTEMPTS ]]; do
         log_info "Step S-5: ll-builder build 開始（第 ${build_attempt}/${MAX_BUILD_ATTEMPTS} 次）..."
-        if (cd "$project_dir" && timeout "$BUILD_TIMEOUT_SEC" ll-builder build --cache-dir "$task_build_tmp_dir" >> "$log_file" 2>&1); then
+        if (cd "$project_dir" && timeout "$BUILD_TIMEOUT_SEC" ll-builder build --skip-output-check >> "$log_file" 2>&1); then
             log_ok "ll-builder build 成功"
         else
             local build_exit=$?

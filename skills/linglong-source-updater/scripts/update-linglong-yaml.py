@@ -143,10 +143,7 @@ def update_linglong_yaml(
     if insert_after:
         keys = list(data.keys())
         idx = keys.index(insert_after)
-        keys.insert(idx + 1, "sources")
-        data["sources"] = [source_entry]
-        data_move = data
-        data = {k: data_move[k] for k in keys if k in data_move}
+        data.insert(idx + 1, "sources", [source_entry])
 
     # --- update build ---
     build_text = data.get("build", "")
