@@ -58,6 +58,8 @@ SOURCES_REQUIRED_FIELDS = {
 
 PACKAGE_VERSION_RE = re.compile(r'^\d+\.\d+\.\d+\.\d+$')
 TOPLEVEL_VERSION_RE = re.compile(r'^\d+$')
+DIGEST_HEX_RE = re.compile(r'^[0-9a-fA-F]+$')
+DIGEST_FORMAT_MSG = "sources[{i}].digest must be a hex string (only 0-9, a-f, A-F), got '{val}'"
 
 
 def validate_sources(sources: list) -> list:
@@ -77,6 +79,9 @@ def validate_sources(sources: list) -> list:
             val = src.get(field)
             if not isinstance(val, str) or not val:
                 errors.append(f"sources[{i}].{field} is required for kind '{kind}'")
+        digest_val = src.get("digest")
+        if isinstance(digest_val, str) and digest_val and not DIGEST_HEX_RE.match(digest_val):
+            errors.append(DIGEST_FORMAT_MSG.format(i=i, val=digest_val))
     return errors
 
 
