@@ -47,6 +47,7 @@ SRC_DIR="$(cd "$(dirname "$SRC_DIR")" 2>/dev/null && pwd)/$(basename "$SRC_DIR")
 OUTPUT_DIR=$(json_strip "$OUTPUT_DIR")
 SRC_DIR=$(json_strip "$SRC_DIR")
 BUILD_TMP_DIR=$(json_strip "$BUILD_TMP_DIR")
+DATA_DIR=$(json_strip "$DATA_DIR")
 
 log_info "項目根目錄: $PROJECTS_ROOT"
 log_info "輸出目錄:   $OUTPUT_DIR"
@@ -273,6 +274,19 @@ run_source_task() {
     end_time=$(date +%s)
     local elapsed=$((end_time - start_time))
     log_ok "$pkg_name 打包成功 (耗時 ${elapsed}s)"
+
+    # 檢查並投遞修改日志
+    local fix_log_path="${DATA_DIR}/${pkg_name}.fix-log.md"
+    if [[ -f "$fix_log_path" ]]; then
+        log_info "檢測到修改日志，發布到 issue..."
+        bash "$REPO_ROOT/skills/linyaps-multica-packer-dispatch/scripts/dispatch.sh" \
+            post_fix_log \
+            --pkgName="$pkg_name" \
+            --fix-log-path="$fix_log_path" \
+            ${DATA_DIR:+--data-dir="$DATA_DIR"} \
+            2>/dev/null || log_warn "發布修改日志失敗（不阻斷）"
+    fi
+
     SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
     RESULTS+=("$pkg_name: 成功 (${elapsed}s)")
 }

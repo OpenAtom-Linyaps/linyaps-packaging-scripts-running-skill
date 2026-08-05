@@ -5,7 +5,8 @@ description: >
   由 linyaps-packer-1/linyaps-packer-2 在打包过程中调用，用于：
   (1) detect_init_source — 检测当前任务是否由 init 节点触发；
   (2) dispatch_project_not_found — 项目未适配时向 init-tracker / linyaps-src-init 发起指派；
-  (3) update_issue_status — 汇总后更新 issue 状态。
+  (3) update_issue_status — 汇总后更新 issue 状态；
+  (4) post_fix_log — LLM 修复后发布修改日志为 issue comment。
   不适用于其他节点类型（init-tracker、linyaps-src-init 等）。
 argument-hint: '<action> <params> [agent_config_path]'
 user-invocable: false
@@ -23,7 +24,7 @@ user-invocable: false
 
 **配置接收**：`agent_config_path` 由调用方通过 `skill()` 传入，本 skill 将其映射为 `--config=<path>`（或 `--agent-config-path=<path>`）参数传递给 `dispatch.sh` 脚本。
 
-## 三种 Action 接口
+## 四种 Action 接口
 
 ### Action 1: `detect_init_source`
 
@@ -179,6 +180,38 @@ user-invocable: false
 | binary 项目未找到 | `assign-to-agent` | `init-tracker` |
 | source 项目未找到 | `assign-to-agent` | `linyaps-src-init-1` |
 | 构建失败 | `mark-failed` | 无（直接标记失败） |
+
+### Action 4: `post_fix_log`
+
+LLM 修复项目问题后，将修改日志发布为 issue comment。
+
+**调用时机**：每个任务构建成功后（步骤 7.55），当 `data_dir/<pkgName>.fix-log.md` 存在时。
+
+**输入**：
+```json
+{
+  "action": "post_fix_log",
+  "agent_config_path": "for-multica/agent-config.json",
+  "pkgName": "com.example.app",
+  "fix_log_path": "/data/linyaps-CI-output/2026-08-05.log/com.example.app.fix-log.md",
+  "workspace": "linyaps"
+}
+```
+
+**输出**：
+```json
+{
+  "posted": true,
+  "pkgName": "com.example.app",
+  "timestamp": "2026-08-05 14:30:00"
+}
+```
+
+**执行逻辑**：
+1. 校验 `--fix-log-path` 指向的文件存在
+2. 查询当前 ISSUE_ID
+3. 通过 `multica issue comment add` 发布 fix log 内容为 issue comment
+4. multica CLI 不可用或查询不到 ISSUE_ID → 记录警告，**不阻断**
 
 ## 约束
 

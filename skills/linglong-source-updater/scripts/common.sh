@@ -375,3 +375,34 @@ print_results_summary() {
         log_warn "$fail_count 個任務失敗，請檢查日誌"
     fi
 }
+
+# write_fix_log — 寫入修改日志到 data_dir
+# 参数:
+#   $1  pkg_name      — 包名
+#   $2  data_dir      — 數據目錄
+#   $3  orig_version  — 原始版本號
+#   $4  fix_markdown  — LLM 輸出的修改日志 Markdown 內容
+#   $5  build_elapsed — 構建耗時（秒）
+# 輸出: fix log 文件路徑（stdout）
+write_fix_log() {
+    local pkg_name="$1"
+    local data_dir="$2"
+    local orig_version="$3"
+    local fix_markdown="$4"
+    local build_elapsed="$5"
+
+    mkdir -p "$data_dir"
+    local log_path="${data_dir}/${pkg_name}.fix-log.md"
+
+    cat > "$log_path" << FIXLOG
+### 🔧 修改日志: ${pkg_name}
+
+**构建状态**: 成功 ✅
+**构建耗时**: ${build_elapsed}s
+**原始版本**: ${orig_version}
+
+${fix_markdown}
+FIXLOG
+
+    echo "$log_path"
+}

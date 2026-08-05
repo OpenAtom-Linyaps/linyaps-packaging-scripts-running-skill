@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # linyaps-multica-packer-dispatch: dispatch.sh
 #
-# 统一指派入口脚本，三种 action：
+# 统一指派入口脚本，四种 action：
 #   detect_init_source       — 检测初始化来源
 #   dispatch_project_not_found — 项目未找到时发起指派
 #   update_issue_status       — 更新 issue 状态
+#   post_fix_log              — 发布修改日志为 issue comment
 #
 # 使用方式：
 #   bash dispatch.sh detect_init_source [--workspace=<slug>] [--output=<path>]
 #   bash dispatch.sh dispatch_project_not_found --pkgName=<name> --src_url=<url> --arch=<arch> --type=<binary|source> [--workspace=<slug>] [--data-dir=<path>] [--config=<path>]
 #   bash dispatch.sh update_issue_status --success=<n> --fail=<n> --pending=<n> --src-pending=<n> [--workspace=<slug>]
+#   bash dispatch.sh post_fix_log --pkgName=<name> --fix-log-path=<path> [--workspace=<slug>]
 
 set -euo pipefail
 
@@ -35,6 +37,7 @@ SUCCESS_COUNT=0
 FAIL_COUNT=0
 PENDING_COUNT=0
 SRC_PENDING_COUNT=0
+FIX_LOG_PATH=""
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -51,6 +54,7 @@ while [[ $# -gt 0 ]]; do
     --fail=*)       FAIL_COUNT="${1#*=}" ;;
     --pending=*)    PENDING_COUNT="${1#*=}" ;;
     --src-pending=*) SRC_PENDING_COUNT="${1#*=}" ;;
+    --fix-log-path=*) FIX_LOG_PATH="${1#*=}" ;;
     *)
       log_err "未知参数: $1"
       exit 1
@@ -221,8 +225,46 @@ elif [[ "$ACTION" == "update_issue_status" ]]; then
 JSON
 )"
 
+# ---- post_fix_log ----
+elif [[ "$ACTION" == "post_fix_log" ]]; then
+  if [[ -z "$PKG_NAME" || -z "$FIX_LOG_PATH" ]]; then
+    echo '{"error":"缺少必填参数: --pkgName, --fix-log-path"}' >&2
+    exit 1
+  fi
+  if [[ ! -f "$FIX_LOG_PATH" ]]; then
+    log_warn "fix log 文件不存在: ${FIX_LOG_PATH}，跳过"
+    output_json '{"posted":false,"pkgName":"'"${PKG_NAME}"'","error":"file_not_found"}'
+    exit 0
+  fi
+
+  POSTED=false
+  if command -v multica &>/dev/null; then
+    if [[ -n "$WORKSPACE" ]]; then
+      multica workspace switch "$WORKSPACE" >/dev/null 2>&1 || true
+    fi
+    ISSUE_ID=$(multica issue list --limit 10 2>/dev/null | grep -oP 'issue-\d+' | head -1)
+    if [[ -n "$ISSUE_ID" ]]; then
+      FIX_CONTENT=$(cat "$FIX_LOG_PATH")
+      if multica issue comment add "$ISSUE_ID" --content "$FIX_CONTENT" 2>/dev/null; then
+        POSTED=true
+        log_ok "修改日志已发布为 issue comment: ${PKG_NAME}"
+      else
+        log_warn "multica comment 发送失败（${PKG_NAME}）"
+      fi
+    else
+      log_warn "无法查询 ISSUE_ID，跳过 post_fix_log"
+    fi
+  else
+    log_warn "multica CLI 不可用，跳过 post_fix_log"
+  fi
+
+  output_json "$(cat <<JSON
+{"posted":${POSTED},"pkgName":"${PKG_NAME}","timestamp":"$(date +'%Y-%m-%d %H:%M:%S')"}
+JSON
+)"
+
 else
 log_err "未知 action: ${ACTION}"
-  log_info "可用 action: detect_init_source, dispatch_project_not_found, update_issue_status"
+  log_info "可用 action: detect_init_source, dispatch_project_not_found, update_issue_status, post_fix_log"
   exit 1
 fi

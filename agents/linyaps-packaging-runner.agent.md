@@ -210,3 +210,22 @@ for task_type, task_list in tasks_by_type.items():
   - 無構建進程但命令仍未退出 → 判定掛起，才走重試
 - binary：整個 `pak_linyaps.sh` 調用包裹重試 + 首輪窗口
 - source：`ll-builder build` 和 `ll-builder export` 各有獨立窗口；`export` 失敗時重試從 `build` 重新開始
+
+## 修改日志约束
+
+当 LLM 在构建过程中对项目文件（`linglong.yaml`、`pak_linyaps.sh` 等）进行修改并成功构建时，**必须**在最终输出中包含结构化修改日志，格式如下：
+
+```markdown
+### 🔧 修改日志: <pkgName>
+
+**构建状态**: 成功 ✅
+**构建耗时**: <elapsed>s
+
+| # | 文件 | 修改项 | 修改前 | 修改后 | 原因 |
+|---|------|--------|--------|--------|------|
+| 1 | linglong.yaml | buildDepends | libbar-dev | libbaz-dev | 仓库中不存在 |
+```
+
+若无任何修改，输出 `无修改`。
+
+修改日志由脚本捕获后暂存到 `data_dir/<pkgName>.fix-log.md`，并作为构建结果的一部分返回。非 multica 场景下，修改日志仅在最终输出摘要中展示。
