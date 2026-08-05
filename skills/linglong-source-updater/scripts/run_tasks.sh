@@ -170,6 +170,7 @@ run_source_task() {
     log_info "Step S-3: 更新 linglong.yaml..."
     local update_cmd="python3 \"$SCRIPT_DIR/update-linglong-yaml.py\" \
         --path=\"$project_dir\" \
+        --version=\"$orig_version\" \
         --kind=\"$dl_kind\" \
         --url=\"$dl_url\" \
         --digest=\"$dl_digest\" \

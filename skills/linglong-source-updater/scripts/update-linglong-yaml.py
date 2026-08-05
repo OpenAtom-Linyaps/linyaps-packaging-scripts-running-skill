@@ -1,25 +1,26 @@
 #!/usr/bin/env python3
 """
-update-linglong-yaml.py — 更新 linglong.yaml 补充上游源码信息和构建规则。
+update-linglong-yaml.py — 更新 linglong.yaml 补充上游源码信息。
 
 功能：
-  1. 添加 sources 段 (archive/git/file/dsc)
-  2. build 段首行插入 cd 进入源码目录（archive/git/dsc 使用 ls -d 动态发现）
-  3. 确保 build 末尾有 touch/chmod 指令
-  4. 修正 ${prefix} → ${PREFIX}
+  1. 更新 package.version
+  2. 添加 sources 段 (archive/git/file/dsc)
+  3. build 段首行插入 cd 进入源码目录（archive/git/dsc 使用 ls -d 动态发现）
+  4. 修正 ${prefix} → ${PREFIX}，硬编码 /usr 路径 → ${PREFIX}
+  5. 确保 build 末尾有 touch/chmod 指令
 
 用法:
-    python3 update-linglong-yaml.py \\
-        --path /path/to/project \\
-        --kind archive \\
-        --url https://example.com/src.tar.gz \\
-        --digest sha256:abc123... \\
+    python3 update-linglong-yaml.py \
+        --path /path/to/project \
+        --version 2.0.0.0 \
+        --kind archive \
+        --url https://example.com/src.tar.gz \
+        --digest sha256:abc123... \
         --name kate-src
         [--commit <git-commit>]
 """
 
 import argparse
-import os
 import re
 import sys
 from pathlib import Path
@@ -71,7 +72,6 @@ def fix_prefix_variables(build_text: str) -> str:
 
 def ensure_build_suffix(build_text: str) -> str:
     lines = build_text.rstrip("\n").split("\n")
-    # remove trailing empty lines
     while lines and lines[-1].strip() == "":
         lines.pop()
     required_commands = [
@@ -110,6 +110,7 @@ def update_linglong_yaml(
     name: str,
     commit: str = None,
     inplace: bool = True,
+    new_version: str = None,
 ):
     yaml_path = Path(project_dir) / "linglong.yaml"
     if not yaml_path.exists():
@@ -123,6 +124,13 @@ def update_linglong_yaml(
 
     with open(yaml_path, "r", encoding="utf-8") as f:
         data = yaml.load(f)
+
+    # --- update package.version ---
+    if new_version:
+        if "package" not in data or not isinstance(data["package"], dict):
+            print("ERROR: 'package' section not found or not a mapping", file=sys.stderr)
+            sys.exit(1)
+        data["package"]["version"] = new_version
 
     # --- insert sources ---
     source_entry = build_source_entry(kind, url, digest, name, commit)
@@ -166,6 +174,7 @@ def update_linglong_yaml(
 def main():
     parser = argparse.ArgumentParser(description="Update linglong.yaml with upstream source info")
     parser.add_argument("--path", required=True, help="Project directory containing linglong.yaml")
+    parser.add_argument("--version", default="", help="New package.version (e.g. 2.0.0.0)")
     parser.add_argument("--kind", required=True, choices=["archive", "git", "file", "dsc"],
                         help="Source type")
     parser.add_argument("--url", required=True, help="Upstream source URL")
@@ -191,6 +200,7 @@ def main():
         name=args.name,
         commit=args.commit,
         inplace=args.inplace,
+        new_version=args.version or None,
     )
 
 

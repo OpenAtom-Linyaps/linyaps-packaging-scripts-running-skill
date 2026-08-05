@@ -15,13 +15,12 @@ user-invocable: false
 ## 目錄約定
 
 - 下載校驗腳本：`skills/linglong-source-updater/scripts/download-and-checksum.sh`
-- YAML 更新腳本（可選輔助）：`skills/linglong-source-updater/scripts/update-linglong-yaml.py`
+- YAML 更新腳本：`skills/linglong-source-updater/scripts/update-linglong-yaml.py`
 - 格式驗證腳本：`skills/linglong-source-updater/scripts/validate-linglong-yaml.py`
+- 自動化管線腳本：`skills/linglong-source-updater/scripts/run_tasks.sh`
 - 字段規範參考：`skills/linglong-source-updater/references/manifests-for-yaml.md`
 - 共享庫：`skills/linglong-source-updater/scripts/common.sh`
 - 架構映射：`skills/config/arch_mapping.json`
-
-> **注意**：`run_tasks.sh` 已棄用，不再使用。原因見下方說明。
 
 ## 使用前提
 
@@ -65,31 +64,46 @@ bash scripts/download-and-checksum.sh <src_url> <kind> <name> [commit]
 
 輸出 JSON 格式結果，包含 `kind`、`url`、`digest`、`name`、`commit` 等字段。
 
-### 2. 編輯 linglong.yaml
+### 2. 自動化更新 linglong.yaml
 
-根據上一步的 JSON 輸出，手動編輯項目目錄下的 `linglong.yaml`：
+**使用 `run_tasks.sh` 自動化管線執行完整流程**，該腳本會自動完成以下操作：
 
-- 更新 `package.version` 為最新版本號
-- 添加 `sources` 段，包含 `kind`、`url`、`digest`（archive/dsc）或 `commit`（git）
-- 確保 `build` 段：
-  - 第一行進入源碼目錄：`export SRC_ROOT=$(ls -d /project/linglong/sources/<name>/*)` 後 `cd ${SRC_ROOT}`
-  - 所有安裝路徑使用 `${PREFIX}` 而非硬編碼的 `/usr` 或 `/usr/local`
-  - 包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
-- `sources` 段的 `digest` 字段必須為純數值格式（如 `a54f62cbfcf7a09a3ad633...`），不得包含 `sha256:` 等前綴
-
-可選：使用 `update-linglong-yaml.py` 輔助生成 sources 段內容，但推薦手動編輯以確保準確性。
-
-### 3. 驗證
-
-調用 `validate-linglong-yaml.py` 檢查 YAML 格式：
+1. 驗證輸入 `linglong.yaml`（無 sources 段）
+2. 下載源碼並校驗（`download-and-checksum.sh`）
+3. 更新 `linglong.yaml`（`update-linglong-yaml.py`）：
+   - 更新 `package.version`
+   - 添加 `sources` 段（`kind`、`url`、`digest`、`name`）
+   - `digest` 自動去除非十六進位前綴（如 `sha256:`）
+   - `build` 首行插入 SRC_ROOT 目錄切換命令
+   - 修正 `${prefix}` → `${PREFIX}`，硬編碼 `/usr` 路徑 → `${PREFIX}`
+   - 確保 `build` 末尾有 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
+4. 驗證輸出 `linglong.yaml`（含 sources 段）
+5. 執行 `ll-builder build && ll-builder export`（含重試與超時保護）
 
 ```bash
-python3 scripts/validate-linglong-yaml.py <project_dir>/linglong.yaml --allow-sources
+bash skills/linglong-source-updater/scripts/run_tasks.sh <subtask.json>
 ```
+
+> `run_tasks.sh` 是標準執行路徑，`update-linglong-yaml.py` 是唯一的 `build` 字段修改入口。
+
+### 3. LLM 只讀檢閱
+
+`run_tasks.sh` 執行完成後，LLM **只讀**檢閱生成的 `linglong.yaml` 確認正確性：
+
+```bash
+cat <project_dir>/linglong.yaml
+```
+
+檢閱要點：
+- `package.version` 是否為目標版本
+- `sources` 段格式是否正確（`digest` 為純十六進位，無 `sha256:` 前綴）
+- `build` 段是否包含 SRC_ROOT 切換 → prefix 修正 → touch/chmod 的標準結構
+
+**LLM 不得對 `linglong.yaml` 做任何編輯操作**。若檢閱發現異常，應重新執行 `run_tasks.sh` 或 `update-linglong-yaml.py`，而非手動修改。
 
 ### 4. 構建
 
-告知用戶手動進入項目目錄執行：
+若需要單獨執行構建（或 `run_tasks.sh` 未包含構建步驟時）：
 
 ```bash
 cd <project_dir>
@@ -98,9 +112,10 @@ ll-builder build --skip-output-check
 
 ## 約束
 
-- 不使用 `run_tasks.sh`：該腳本內部通過 `common.sh` 引入 `find_project_dir()` 函數，該函數依賴 `pak_linyaps.sh` 文件存在來定位項目目錄，不適用於源碼項目（源碼項目應以 `linglong.yaml` 為標識）
+- `run_tasks.sh` 是標準執行路徑，其中 `update-linglong-yaml.py` 是唯一的 `build` 字段修改入口，其自動化操作（SRC_ROOT 插入、prefix 修正、touch/chmod 追加）是**允許的標準行為**
+- **LLM 只讀** `linglong.yaml`——檢閱時不得做任何編輯操作。若需修改，重新執行腳本
 - `build` 第一個步驟必須進入源碼目錄，使用 `export SRC_ROOT=$(ls -d /project/linglong/sources/<name>/*)` 動態發現後 `cd ${SRC_ROOT}`
 - `build` 段必須包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
-- `${PREFIX}` 安裝目錄約束同上
+- `${PREFIX}` 安裝目錄約束：所有安裝路徑使用 `${PREFIX}` 而非硬編碼的 `/usr` 或 `/usr/local`
 - `sources` 段的 `digest` 字段不得包含 `sha256:` 等加密方法前綴
 - 參考示例：`references/build.section.example.yaml`、`references/sources.section.example.yaml`
