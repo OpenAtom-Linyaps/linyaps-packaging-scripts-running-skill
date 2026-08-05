@@ -55,41 +55,60 @@ user-invocable: false
 
 ## 執行流程
 
-### 1. 源碼下載與分析
+整個流程分為三個階段，LLM 在**更新階段完成後、構建階段開始前**介入檢閱，避免帶著錯誤進入構建。
 
-調用 `download-and-checksum.sh` 下載源碼並計算摘要：
-
-```bash
-bash scripts/download-and-checksum.sh <src_url> <kind> <name> [commit]
+```
+Phase A（更新階段）
+  ├─ A-1: 驗證輸入 linglong.yaml（無 sources 段）
+  ├─ A-2: 下載源碼並計算摘要
+  └─ A-3: 更新 linglong.yaml（version + sources + build 修正）
+         └─ A-4: 驗證輸出 linglong.yaml（含 sources 段）
+              ↓
+Phase B（LLM 只讀檢閱）← 在此介入，確保 linglong.yaml 無誤
+  └─ 若發現異常 → 重新執行 A-2~A-3
+              ↓
+Phase C（構建階段）
+  ├─ ll-builder build
+  └─ ll-builder export
 ```
 
-輸出 JSON 格式結果，包含 `kind`、`url`、`digest`、`name`、`commit` 等字段。
+### Phase A: 更新 linglong.yaml（不構建）
 
-### 2. 自動化更新 linglong.yaml
-
-**使用 `run_tasks.sh` 自動化管線執行完整流程**，該腳本會自動完成以下操作：
-
-1. 驗證輸入 `linglong.yaml`（無 sources 段）
-2. 下載源碼並校驗（`download-and-checksum.sh`）
-3. 更新 `linglong.yaml`（`update-linglong-yaml.py`）：
-   - 更新 `package.version`
-   - 添加 `sources` 段（`kind`、`url`、`digest`、`name`）
-   - `digest` 自動去除非十六進位前綴（如 `sha256:`）
-   - `build` 首行插入 SRC_ROOT 目錄切換命令
-   - 修正 `${prefix}` → `${PREFIX}`，硬編碼 `/usr` 路徑 → `${PREFIX}`
-   - 確保 `build` 末尾有 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
-4. 驗證輸出 `linglong.yaml`（含 sources 段）
-5. 執行 `ll-builder build && ll-builder export`（含重試與超時保護）
+使用逐個腳本完成更新，**不要包含構建步驟**：
 
 ```bash
-bash skills/linglong-source-updater/scripts/run_tasks.sh <subtask.json>
+# A-1: 驗證輸入 linglong.yaml（無 sources 段）
+python3 skills/linglong-source-updater/scripts/validate-linglong-yaml.py <project_dir>/linglong.yaml
+
+# A-2: 下載源碼並分析
+source_json=$(bash skills/linglong-source-updater/scripts/download-and-checksum.sh <src_url> <kind> <name> [commit])
+
+# 從 source_json 中提取字段
+dl_kind=$(echo "$source_json" | python3 -c "import json,sys; print(json.load(sys.stdin)['kind'])")
+dl_url=$(echo "$source_json" | python3 -c "import json,sys; print(json.load(sys.stdin)['url'])")
+dl_digest=$(echo "$source_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('digest',''))")
+dl_name=$(echo "$source_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('name',''))")
+dl_commit=$(echo "$source_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('commit',''))")
+
+# A-3: 更新 linglong.yaml（更新 version、添加 sources、修正 build）
+python3 skills/linglong-source-updater/scripts/update-linglong-yaml.py \
+  --path="<project_dir>" \
+  --version="<orig_version>" \
+  --kind="$dl_kind" \
+  --url="$dl_url" \
+  --digest="$dl_digest" \
+  --name="$dl_name" \
+  [--commit="$dl_commit"]
+
+# A-4: 驗證輸出 linglong.yaml（含 sources 段）
+python3 skills/linglong-source-updater/scripts/validate-linglong-yaml.py <project_dir>/linglong.yaml --allow-sources
 ```
 
-> `run_tasks.sh` 是標準執行路徑，`update-linglong-yaml.py` 是唯一的 `build` 字段修改入口。
+> 如果使用 `download-and-checksum.sh` 時不需要預先執行 validate（該腳本在步驟內已隱含前提檢查），但首次調用 validate-linglong-yaml.py（A-1）是檢查起始狀態的必要步驟。
 
-### 3. LLM 只讀檢閱
+### Phase B: LLM 只讀檢閱
 
-`run_tasks.sh` 執行完成後，LLM **只讀**檢閱生成的 `linglong.yaml` 確認正確性：
+Phase A 完成後，LLM **只讀**檢閱生成的 `linglong.yaml` 確認正確性：
 
 ```bash
 cat <project_dir>/linglong.yaml
@@ -100,21 +119,26 @@ cat <project_dir>/linglong.yaml
 - `sources` 段格式是否正確（`digest` 為純十六進位，無 `sha256:` 前綴）
 - `build` 段是否包含 SRC_ROOT 切換 → prefix 修正 → touch/chmod 的標準結構
 
-**LLM 不得對 `linglong.yaml` 做任何編輯操作**。若檢閱發現異常，應重新執行 `run_tasks.sh` 或 `update-linglong-yaml.py`，而非手動修改。
+**LLM 不得對 `linglong.yaml` 做任何編輯操作**。若檢閱發現異常，應重新執行 Phase A 的 A-2~A-3 步驟（下載 + 更新），而非手動修改。
 
-### 4. 構建
+### Phase C: 構建
 
-若需要單獨執行構建（或 `run_tasks.sh` 未包含構建步驟時）：
+LLM 檢閱確認無誤後，執行構建：
 
 ```bash
 cd <project_dir>
 ll-builder build --skip-output-check
+ll-builder export --layer --no-develop -z zstd
 ```
+
+若項目需要等待構建進程，參考下方的「構建進度檢測」。
 
 ## 約束
 
-- `run_tasks.sh` 是標準執行路徑，其中 `update-linglong-yaml.py` 是唯一的 `build` 字段修改入口，其自動化操作（SRC_ROOT 插入、prefix 修正、touch/chmod 追加）是**允許的標準行為**
-- **LLM 只讀** `linglong.yaml`——檢閱時不得做任何編輯操作。若需修改，重新執行腳本
+- **標準執行路徑**：Phase A（逐個腳本更新）→ Phase B（LLM 檢閱）→ Phase C（構建）。LLM 檢閱必須在 Phase A 之後、Phase C 之前，不可顛倒
+- 作為更新階段捷徑，`run_tasks.sh` 也可用於一鍵執行 Phase A 全部子步驟（A-1~A-4），但調用後必須先執行 Phase B（LLM 檢閱），確認無誤後再手動執行 Phase C（構建）。**禁止直接使用 `run_tasks.sh` 的完整流程（含構建），因為這會跳過 LLM 檢閱**
+- `update-linglong-yaml.py` 是唯一的 `build` 字段修改入口，其自動化操作（SRC_ROOT 插入、prefix 修正、touch/chmod 追加）是**允許的標準行為**
+- **LLM 只讀** `linglong.yaml`——檢閱時不得做任何編輯操作。若需修改，重新執行 Phase A 中的對應腳本
 - `build` 第一個步驟必須進入源碼目錄，使用 `export SRC_ROOT=$(ls -d /project/linglong/sources/<name>/*)` 動態發現後 `cd ${SRC_ROOT}`
 - `build` 段必須包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
 - `${PREFIX}` 安裝目錄約束：所有安裝路徑使用 `${PREFIX}` 而非硬編碼的 `/usr` 或 `/usr/local`
