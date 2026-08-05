@@ -17,6 +17,7 @@ user-invocable: false
 - 下載校驗腳本：`skills/linglong-source-updater/scripts/download-and-checksum.sh`
 - YAML 更新腳本：`skills/linglong-source-updater/scripts/update-linglong-yaml.py`
 - 格式驗證腳本：`skills/linglong-source-updater/scripts/validate-linglong-yaml.py`
+- 構建進度檢測：`skills/linglong-source-updater/scripts/check-build-active.sh`
 - 自動化管線腳本：`skills/linglong-source-updater/scripts/run_tasks.sh`
 - 字段規範參考：`skills/linglong-source-updater/references/manifests-for-yaml.md`
 - 共享庫：`skills/linglong-source-updater/scripts/common.sh`
@@ -119,3 +120,23 @@ ll-builder build --skip-output-check
 - `${PREFIX}` 安裝目錄約束：所有安裝路徑使用 `${PREFIX}` 而非硬編碼的 `/usr` 或 `/usr/local`
 - `sources` 段的 `digest` 字段不得包含 `sha256:` 等加密方法前綴
 - 參考示例：`references/build.section.example.yaml`、`references/sources.section.example.yaml`
+
+## 構建進度檢測（避免長構建被誤判超時）
+
+部分項目構建時間可能超過單次 `timeout` 窗口，導致被誤判為超時。**不要僅憑 `timeout` 的退出碼（124）判定構建失敗。**
+
+`ll-builder build` / `ll-builder export` 執行期間，每 **10 分鐘**調用一次 `scripts/check-build-active.sh` 判斷當前是否有 `ll-builder`、`fuse-overlayfs`、`erofsfuse` 之一在運行：
+
+```bash
+bash skills/linglong-source-updater/scripts/check-build-active.sh
+# exit 0 → 仍有構建進程 → 構建進行中，不判超時，繼續等待
+# exit 1 → 無構建進程 → 構建已結束
+
+bash skills/linglong-source-updater/scripts/check-build-active.sh -o json
+# {"build_active": true/false, "processes": [...]}
+```
+
+判定規則：
+- **仍有構建進程**（尤其 `ll-builder` 本體）→ 構建仍進行中，**不判超時、不重試**，繼續等待構建完成。
+- **無構建進程且命令已退出** → 正常結束或失敗，按退出碼判定。
+- **無構建進程但命令仍未退出** → 構建疑似掛起，才判超時並走重試。

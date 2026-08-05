@@ -20,12 +20,13 @@ permission:
 # linyaps 打包任務執行器（Agent）
 
 > **`@MAX_BUILD_ATTEMPTS@` 和 `@BUILD_TIMEOUT_SEC@` 变量声明（单点修改）**
-> 构建任务的重试次数和超时时间由此两个变量全局控制：
+> 构建任务的重试次数和首轮等待窗口由此两个变量全局控制：
 > - `@MAX_BUILD_ATTEMPTS@` = `2` — 每个构建任务最大构建次数（含首次和一次失败重试）
-> - `@BUILD_TIMEOUT_SEC@` = `1800` — 单次构建超时秒数，即 30 分钟
+> - `@BUILD_TIMEOUT_SEC@` = `1800` — 单次构建首轮等待窗口秒数，即 30 分钟
 >
-> **替换规则**：在 bash 脚本中必须使用 `timeout @BUILD_TIMEOUT_SEC@` 包裹构建命令，
-> 失败时自动重试（不超过 `@MAX_BUILD_ATTEMPTS@` 次），重试间隔 10 秒。
+> **替换规则**：在 bash 脚本中使用 `timeout @BUILD_TIMEOUT_SEC@` 包裹构建命令作为首轮窗口，
+> 窗口到期后**必须**调用 `scripts/check-build-active.sh` 判断构建是否仍在进行，
+> 仍有构建进程则继续等待（不判超时），失败时自动重试（不超过 `@MAX_BUILD_ATTEMPTS@` 次），重试间隔 10 秒。
 
 根據用戶提供的 JSON 或 CSV 任務文件，按 `tasks[].type` 分派到對應的子 SKILL 執行打包。
 
@@ -202,4 +203,10 @@ for task_type, task_list in tasks_by_type.items():
 
 ### 構建約束（由 `@MAX_BUILD_ATTEMPTS@` / `@BUILD_TIMEOUT_SEC@` 控制）
 - **重試次數限制**：每個構建任務最大執行 `@MAX_BUILD_ATTEMPTS@` 次（含首次），首次失敗後允許重試 1 次，重試間隔 10 秒
-- **超時限制**：單次構建超過 `@BUILD_TIMEOUT_SEC@` 秒（30 分鐘）即強制終止，計為超時失敗
+- **首輪等待窗口**：單次構建以 `@BUILD_TIMEOUT_SEC@` 秒（30 分鐘）為首輪等待窗口
+- **構建進度檢測（優先於 timeout）**：窗口到期時**不得僅憑退出碼 124 判超時**。每 10 分鐘調用 `scripts/check-build-active.sh` 判斷是否仍有 `ll-builder` / `fuse-overlayfs` / `erofsfuse` 進程：
+  - 仍有構建進程 → 構建進行中，不判超時、不重試，繼續等待
+  - 無構建進程且命令已退出 → 按退出碼判定成功/失敗
+  - 無構建進程但命令仍未退出 → 判定掛起，才走重試
+- binary：整個 `pak_linyaps.sh` 調用包裹重試 + 首輪窗口
+- source：`ll-builder build` 和 `ll-builder export` 各有獨立窗口；`export` 失敗時重試從 `build` 重新開始

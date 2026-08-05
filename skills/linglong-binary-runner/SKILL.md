@@ -13,6 +13,7 @@ user-invocable: false
 
 - 執行腳本：`skills/linglong-binary-runner/scripts/run_tasks.sh`
 - 驗證腳本：`skills/linglong-binary-runner/scripts/validate_projects.sh`
+- 構建進度檢測：`skills/linglong-binary-runner/scripts/check-build-active.sh`
 - 共享庫：`skills/linglong-binary-runner/scripts/common.sh`
 - 架構映射：`skills/config/arch_mapping.json`
 
@@ -55,3 +56,23 @@ user-invocable: false
 
 - 打包入口唯一性：所有操作必須通過 `pak_linyaps.sh` 執行，嚴禁自行改寫 `linglong.yaml` 或調用 `ll-builder`
 - 嚴禁修改 `pak_linyaps.sh` 或 `linglong.yaml` 的內容
+
+## 構建進度檢測（避免長構建被誤判超時）
+
+部分項目構建時間可能超過單次 `timeout` 窗口，導致被誤判為超時。**不要僅憑 `timeout` 的退出碼（124）判定構建失敗。**
+
+構建執行期間，每 **10 分鐘**調用一次 `scripts/check-build-active.sh` 判斷當前是否有 `ll-builder`、`fuse-overlayfs`、`erofsfuse` 之一在運行：
+
+```bash
+bash skills/linglong-binary-runner/scripts/check-build-active.sh
+# exit 0 → 仍有構建進程 → 構建進行中，不判超時，繼續等待
+# exit 1 → 無構建進程 → 構建已結束
+
+bash skills/linglong-binary-runner/scripts/check-build-active.sh -o json
+# {"build_active": true/false, "processes": [...]}
+```
+
+判定規則：
+- **仍有構建進程** → 構建仍進行中，**不判超時、不重試**，繼續等待構建完成。
+- **無構建進程且命令已退出** → 正常結束或失敗，按退出碼判定。
+- **無構建進程但命令仍未退出** → 構建疑似掛起，才判超時並走重試。
