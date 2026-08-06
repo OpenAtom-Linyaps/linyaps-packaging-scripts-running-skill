@@ -5,6 +5,7 @@ references:
   - references/manifests-for-yaml.md
   - references/sources.section.example.yaml
   - references/build.section.example.yaml
+  - references/complete-linglong.example.yaml
 user-invocable: false
 ---
 
@@ -115,9 +116,14 @@ cat <project_dir>/linglong.yaml
 ```
 
 檢閱要點：
-- `package.version` 是否為目標版本
+- `package.id` 是否與任務輸入的 `pkgName` 優先對應（若 task JSON 中有 `pkgName`，應以此為準）
+- `package.version` 是否遵循 `a.b.c.d` 四位數字格式，且每一段不能以 `0` 開頭
+  （如 `3.0.23.2` ✅，`3.0.23.02` ❌，`0.2.3.4` ✅）
+- 頂層 `version` 是否與 `package.version` 保持一致
 - `sources` 段格式是否正確（`digest` 為純十六進位，無 `sha256:` 前綴）
 - `build` 段是否包含 SRC_ROOT 切換 → prefix 修正 → touch/chmod 的標準結構
+- 整體結構對照 `references/complete-linglong.example.yaml` 核驗：
+  `version`、`package`、`base`/`runtime`、`sources`、`command`、`build`、`buildext` 段是否齊全
 
 **LLM 不得對 `linglong.yaml` 做任何編輯操作**。若檢閱發現異常，應重新執行 Phase A 的 A-2~A-3 步驟（下載 + 更新），而非手動修改。
 
@@ -143,7 +149,9 @@ ll-builder export --layer --no-develop -z zstd
 - `build` 段必須包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
 - `${PREFIX}` 安裝目錄約束：所有安裝路徑使用 `${PREFIX}` 而非硬編碼的 `/usr` 或 `/usr/local`
 - `sources` 段的 `digest` 字段不得包含 `sha256:` 等加密方法前綴
-- 參考示例：`references/build.section.example.yaml`、`references/sources.section.example.yaml`
+- `package.id` 若任務 JSON 中有 `pkgName` 字段，應優先採用作為 id 生成依據；不強制要求反向域名格式
+- `package.version` 必須為四位數字 `a.b.c.d`，各段均不能以 `0` 開頭
+- 參考示例：`references/build.section.example.yaml`、`references/sources.section.example.yaml`、`references/complete-linglong.example.yaml`
 
 ## 構建進度檢測（避免長構建被誤判超時）
 
