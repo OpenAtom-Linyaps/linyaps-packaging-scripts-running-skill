@@ -1,6 +1,6 @@
 {
   "global": {
-    "projects_root": "",
+    "projects_root": "/data/linyaps-projects",
     "projects_repo": "",
     "output_dir": "./output/${tag}",
     "data_dir": "./data/${tag}.log",

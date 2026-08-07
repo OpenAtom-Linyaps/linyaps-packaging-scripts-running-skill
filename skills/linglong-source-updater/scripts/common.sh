@@ -22,6 +22,10 @@ ARCH_MAPPING_FILE="${REPO_ROOT}/skills/config/arch_mapping.json"
 : "${MAX_BUILD_ATTEMPTS:=2}"
 : "${BUILD_TIMEOUT_SEC:=1800}"
 
+# 構建工作鎖參數（可由環境變數覆蓋）
+: "${BUILD_LOCK_TIMEOUT_SEC:=3600}"   # 獲取鎖的最大等待秒數
+: "${BUILD_LOCK_RETRY_SEC:=10}"       # 獲取鎖的輪詢間隔秒數
+
 RETRY_INTERVAL=10
 
 RED='\033[0;31m'
@@ -34,6 +38,68 @@ log_info()  { echo -e "${CYAN}[INFO]${NC} $*" >&2; }
 log_ok()    { echo -e "${GREEN}[OK]${NC} $*" >&2; }
 log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*" >&2; }
 log_err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+
+# build_lock_dir — 計算指定 pkgName 的工作鎖目錄
+# 参数:
+#   $1  pkg_name    — 包名
+#   $2  locks_root  — 共享項目根目錄（projects_root）
+# 輸出: 鎖目錄路徑（stdout）
+build_lock_dir() {
+    echo "${2}/.linyaps-locks/.linyaps-build-${1}.lock"
+}
+
+# acquire_build_lock — 按 pkgName 獲取構建工作鎖（原子 mkdir，互斥）
+# 每個 pkgName 同時僅允許一個構建進程；鎖由調用方（LLM）在任務結束後顯式釋放。
+# 进程崩潰残留的陳舊鎖，通過比對 owner 中 PID 是否存活（kill -0）自動回收（兜底）。
+# 参数:
+#   $1  pkg_name    — 包名
+#   $2  locks_root  — 共享項目根目錄（projects_root）
+# 返回值: 0=獲鎖成功；1=超時未獲鎖
+acquire_build_lock() {
+    local pkg="$1" locks_root="$2"
+    local lock_dir
+    lock_dir="$(build_lock_dir "$pkg" "$locks_root")"
+
+    mkdir -p "${locks_root}/.linyaps-locks"
+
+    local waited=0
+    while ! mkdir "$lock_dir" 2>/dev/null; do
+        local pid
+        pid=$(awk '{print $1}' "$lock_dir/owner" 2>/dev/null)
+        if [[ -n "$pid" ]] && ! kill -0 "$pid" 2>/dev/null; then
+            log_warn "回收陳舊鎖（PID $pid 已退出）: $lock_dir"
+            rm -rf "$lock_dir"
+            continue
+        fi
+        if [[ $waited -ge $BUILD_LOCK_TIMEOUT_SEC ]]; then
+            log_err "獲取 pkgName($pkg) 構建鎖超時（${BUILD_LOCK_TIMEOUT_SEC}s）: $lock_dir"
+            return 1
+        fi
+        sleep "$BUILD_LOCK_RETRY_SEC"
+        waited=$((waited + BUILD_LOCK_RETRY_SEC))
+    done
+
+    echo "$$ $(date +%s)" > "$lock_dir/owner"
+    log_ok "已獲取 pkgName($pkg) 構建鎖: $lock_dir"
+    return 0
+}
+
+# release_build_lock — 釋放 pkgName 構建工作鎖
+# 由調用方（LLM）在構建+導出完成/失敗後顯式調用。
+# 参数:
+#   $1  pkg_name    — 包名
+#   $2  locks_root  — 共享項目根目錄（projects_root）
+release_build_lock() {
+    local pkg="$1" locks_root="$2"
+    local lock_dir
+    lock_dir="$(build_lock_dir "$pkg" "$locks_root")"
+    if [[ -d "$lock_dir" ]]; then
+        rm -rf "$lock_dir"
+        log_ok "已釋放 pkgName($pkg) 構建鎖: $lock_dir"
+    else
+        log_warn "釋放構建鎖時目錄不存在（可能已被回收）: $lock_dir"
+    fi
+}
 
 build_with_retry() {
     local description="$1"

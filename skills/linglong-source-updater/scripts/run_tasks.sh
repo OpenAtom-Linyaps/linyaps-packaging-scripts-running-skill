@@ -131,13 +131,13 @@ run_source_task() {
         return
     fi
 
-    local task_build_tmp_dir="${BUILD_TMP_DIR}/${pkg_name}"
-    mkdir -p "$task_build_tmp_dir"
-    log_info "任務緩存目錄: $task_build_tmp_dir"
-
     local start_time
     start_time=$(date +%s)
     local log_file="$OUTPUT_DIR/${pkg_name}.source.log"
+
+    # 註：本腳本已棄用。緩存復用遵循「固定 projects_root + 不刪項目目錄」設計，
+    # 不再建立 build_tmp_dir/<pkgName> 獨立緩存子目錄；構建工作鎖見 common.sh 的
+    # acquire_build_lock / release_build_lock（由 LLM 驅動工作流調用）。
 
     log_info "Step S-1: 驗證輸入 linglong.yaml..."
     if python3 "$SCRIPT_DIR/validate-linglong-yaml.py" "$project_dir/linglong.yaml" >> "$log_file" 2>&1; then

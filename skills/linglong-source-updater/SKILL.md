@@ -19,10 +19,16 @@ user-invocable: false
 - YAML 更新腳本：`skills/linglong-source-updater/scripts/update-linglong-yaml.py`
 - 格式驗證腳本：`skills/linglong-source-updater/scripts/validate-linglong-yaml.py`
 - 構建進度檢測：`skills/linglong-source-updater/scripts/check-build-active.sh`
-- 自動化管線腳本：`skills/linglong-source-updater/scripts/run_tasks.sh`
+- 自動化管線腳本：`skills/linglong-source-updater/scripts/run_tasks.sh`（已棄用）
 - 字段規範參考：`skills/linglong-source-updater/references/manifests-for-yaml.md`
-- 共享庫：`skills/linglong-source-updater/scripts/common.sh`
+- 共享庫：`skills/linglong-source-updater/scripts/common.sh`（含 `acquire_build_lock` / `release_build_lock`）
 - 架構映射：`skills/config/arch_mapping.json`
+
+**項目目錄（緩存復用 + 工作鎖）**：
+- 所有 source 項目位於固定的共享目錄 `<projects_root>`（`agent-config.json` 的 `global.projects_root`，固定絕對路徑，跨 issue 保留）下的 `CI_ll_<pkgName>` 等目錄。
+- **版本升級間不得刪除項目目錄**（僅原地更新 `linglong.yaml`/檔案），以復用 ll-builder 依賴緩存（base/runtime/build_depends 層）。
+- **不要**使用 `build_tmp_dir/<pkgName>` 獨立緩存子目錄；依賴緩存復用完全依賴「固定項目目錄不刪除」。
+- 同一 pkgName 的構建由 `<projects_root>/.linyaps-locks/.linyaps-build-<pkgName>.lock/` 工作鎖互斥（見 Phase C）。
 
 ## 使用前提
 
@@ -129,19 +135,28 @@ cat <project_dir>/linglong.yaml
 
 ### Phase C: 構建
 
-LLM 檢閱確認無誤後，執行構建：
+LLM 檢閱確認無誤後，執行構建。構建前**必須**獲取 pkgName 工作鎖，構建+導出完成/失敗後由 LLM **顯式**釋放：
 
 ```bash
+source skills/linglong-source-updater/scripts/common.sh
+acquire_build_lock <pkgName> <projects_root> || exit 1
+
 cd <project_dir>
 ll-builder build --skip-output-check
 ll-builder export --layer --no-develop -z zstd
+
+release_build_lock <pkgName> <projects_root>
 ```
+
+> **鎖說明**：鎖目錄為 `<projects_root>/.linyaps-locks/.linyaps-build-<pkgName>.lock/`，按 pkgName 互斥；同一 pkgName 同時僅一個構建進程。`acquire_build_lock` 通過原子 `mkdir` 互斥，並自動回收進程崩潰殘留的陳舊鎖（比對 `owner` 中 PID 是否存活）。釋放後才允許下一個同 pkgName 任務。構建期間**不得刪除項目目錄**（僅原地更新文件）以復用依賴緩存。
 
 若項目需要等待構建進程，參考下方的「構建進度檢測」。
 
 ## 約束
 
 - **標準執行路徑**：Phase A（逐個腳本更新）→ Phase B（LLM 檢閱）→ Phase C（構建）。LLM 檢閱必須在 Phase A 之後、Phase C 之前，不可顛倒
+- **構建工作鎖**：Phase C 構建前必須 `acquire_build_lock <pkgName> <projects_root>`，構建+導出完成/失敗後由 LLM **顯式** `release_build_lock <pkgName> <projects_root>` 釋放；同一 pkgName 構建互斥，鎖釋放前**不得**進行下一個同 pkgName 構建
+- **項目目錄持久化**：項目位於固定 `<projects_root>` 下；版本升級間**不得刪除**項目目錄（僅原地更新文件）以復用 ll-builder 依賴緩存；**禁止**使用 `build_tmp_dir/<pkgName>` 獨立緩存子目錄
 - 作為更新階段捷徑，`run_tasks.sh` 也可用於一鍵執行 Phase A 全部子步驟（A-1~A-4），但調用後必須先執行 Phase B（LLM 檢閱），確認無誤後再手動執行 Phase C（構建）。**禁止直接使用 `run_tasks.sh` 的完整流程（含構建），因為這會跳過 LLM 檢閱**
 - `update-linglong-yaml.py` 是唯一的 `build` 字段修改入口，其自動化操作（SRC_ROOT 插入、prefix 修正、touch/chmod 追加）是**允許的標準行為**
 - **LLM 只讀** `linglong.yaml`——檢閱時不得做任何編輯操作。若需修改，重新執行 Phase A 中的對應腳本
