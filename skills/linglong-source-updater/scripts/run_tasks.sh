@@ -146,7 +146,7 @@ run_source_task() {
         log_err "輸入驗證失敗: $project_dir/linglong.yaml"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (linglong.yaml 格式錯誤)")
-        tail -5 "$log_file" | sed 's/^/  /'
+        tail -n 100 "$log_file" | sed 's/^/  /'
         return
     fi
 
@@ -185,7 +185,7 @@ run_source_task() {
         log_err "linglong.yaml 更新失敗"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (YAML 更新失敗)")
-        tail -5 "$log_file" | sed 's/^/  /'
+        tail -n 100 "$log_file" | sed 's/^/  /'
         return
     fi
 
@@ -196,7 +196,7 @@ run_source_task() {
         log_err "輸出驗證失敗"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (輸出 linglong.yaml 驗證失敗)")
-        tail -5 "$log_file" | sed 's/^/  /'
+        tail -n 100 "$log_file" | sed 's/^/  /'
         return
     fi
 
@@ -213,7 +213,7 @@ run_source_task() {
             else
                 log_err "ll-builder build 失敗"
             fi
-            tail -10 "$log_file" | sed 's/^/  /'
+            tail -n 100 "$log_file" | sed 's/^/  /'
             if [[ $build_attempt -lt $MAX_BUILD_ATTEMPTS ]]; then
                 log_warn "構建失敗，${RETRY_INTERVAL} 秒後重試..."
                 sleep "$RETRY_INTERVAL"
@@ -236,7 +236,7 @@ run_source_task() {
             else
                 log_err "ll-builder export 失敗"
             fi
-            tail -10 "$log_file" | sed 's/^/  /'
+            tail -n 100 "$log_file" | sed 's/^/  /'
             if [[ $build_attempt -lt $MAX_BUILD_ATTEMPTS ]]; then
                 log_warn "導出失敗，${RETRY_INTERVAL} 秒後重試（從 build 開始）..."
                 sleep "$RETRY_INTERVAL"
@@ -252,7 +252,7 @@ run_source_task() {
         log_err "構建階段失敗，已重試 ${build_attempt} 次"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗（構建階段）")
-        tail -10 "$log_file" | sed 's/^/  /'
+        tail -n 100 "$log_file" | sed 's/^/  /'
         local end_time
         end_time=$(date +%s)
         local elapsed=$((end_time - start_time))
