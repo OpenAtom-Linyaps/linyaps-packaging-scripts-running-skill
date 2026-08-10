@@ -1,6 +1,6 @@
 English | **[中文](README.md)**
 
-# linyaps Packaging Runner
+# linyaps-packaging-runner
 
 Automated task orchestration for [linyaps](https://linyaps.org.cn/) packaging. Reads task definitions from **JSON** or **CSV** files and dispatches them by `tasks[].type` to the matching sub-skill: **binary** (default) tasks run pre-adapted projects via `pak_linyaps.sh`; **source** tasks compile and package via `ll-builder build` + `ll-builder export`.
 
@@ -23,13 +23,12 @@ User Task (JSON/CSV)
     │ binary      │      │ source      │
     │ (or unset)  │      │             │
     ▼             ▼      ▼             ▼
-┌──────────────────┐ ┌──────────────────────┐
-│ linglong-binary- │ │ linglong-source-     │
-│ runner           │ │ updater              │
-│                  │ │                      │
-│ pak_linyaps.sh   │ │ ll-builder build     │
-│                  │ │ ll-builder export    │
-└──────────────────┘ └──────────────────────┘
+┌──────────────────────────┐ ┌──────────────────────────┐
+│ linglong-binary-runner   │ │ linglong-source-updater  │
+│                          │ │                          │
+│ pak_linyaps.sh           │ │ ll-builder build         │
+│                          │ │ ll-builder export        │
+└──────────────────────────┘ └──────────────────────────┘
 ```
 
 ## Workflow
