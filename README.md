@@ -2,7 +2,7 @@
 
 # linyaps-packaging-scripts-running-skill
 
-[linyaps](https://linyaps.org.cn/)（玲珑）打包脚本的自動化任務編排工具。從 **JSON** 或 **CSV** 任務文件讀取定義，按 `tasks[].type` 分派到對應子 SKILL：**binary**（預設）任務使用 `pak_linyaps.sh` 執行已適配項目打包；**source** 任務使用 `ll-builder build` + `ll-builder export` 執行源碼編譯打包。
+[Linyaps](https://linyaps.org.cn/)（如意玲珑）打包脚本的自動化任務編排工具。從 **JSON** 或 **CSV** 任務文件讀取定義，按 `tasks[].type` 分派到對應子 SKILL：**binary**（預設）任務使用 `pak_linyaps.sh` 執行已適配項目打包；**source** 任務使用 `ll-builder build` + `ll-builder export` 執行源碼編譯打包。
 
 ## 架构
 
