@@ -1,6 +1,6 @@
 > [English](README.en-US.md) | **中文**
 
-# linyaps-packaging-runner
+# linyaps-packaging-scripts-running-skill
 
 [linyaps](https://linyaps.org.cn/)（玲珑）打包脚本的自動化任務編排工具。從 **JSON** 或 **CSV** 任務文件讀取定義，按 `tasks[].type` 分派到對應子 SKILL：**binary**（預設）任務使用 `pak_linyaps.sh` 執行已適配項目打包；**source** 任務使用 `ll-builder build` + `ll-builder export` 執行源碼編譯打包。
 
@@ -13,7 +13,7 @@ User Task (JSON/CSV)
     │
     ▼
 ┌─────────────────────────────────────┐
-│  linyaps-packaging-runner (Agent)   │  ← 入口：分派逻辑
+│  linyaps-packaging-scripts-running-skill (Agent)   │  ← 入口：分派逻辑
 │  ├─ 读取 agent-config.json          │
 │  ├─ 按 type 分组任务                │
 │  └─ 分派到子 SKILL                  │
