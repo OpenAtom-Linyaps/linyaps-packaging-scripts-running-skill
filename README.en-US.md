@@ -2,7 +2,7 @@ English | **[中文](README.md)**
 
 # linyaps-packaging-scripts-running-skill
 
-Automated task orchestration for [linyaps](https://linyaps.org.cn/) packaging. Reads task definitions from **JSON** or **CSV** files and dispatches them by `tasks[].type` to the matching sub-skill: **binary** (default) tasks run pre-adapted projects via `pak_linyaps.sh`; **source** tasks compile and package via `ll-builder build` + `ll-builder export`.
+Automated task orchestration for [Linyaps](https://linyaps.org.cn/) packaging. Reads task definitions from **JSON** or **CSV** files and dispatches them by `tasks[].type` to the matching sub-skill: **binary** (default) tasks run pre-adapted projects via `pak_linyaps.sh`; **source** tasks compile and package via `ll-builder build` + `ll-builder export`.
 
 ## Architecture
 
