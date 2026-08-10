@@ -1,6 +1,6 @@
 > [English](README.en-US.md) | **中文**
 
-# linyaps 打包任务执行器
+# linyaps-packaging-runner
 
 [linyaps](https://linyaps.org.cn/)（玲珑）打包脚本的自動化任務編排工具。從 **JSON** 或 **CSV** 任務文件讀取定義，按 `tasks[].type` 分派到對應子 SKILL：**binary**（預設）任務使用 `pak_linyaps.sh` 執行已適配項目打包；**source** 任務使用 `ll-builder build` + `ll-builder export` 執行源碼編譯打包。
 
@@ -23,13 +23,12 @@ User Task (JSON/CSV)
     │ binary      │      │ source      │
     │ (或未指定)   │      │             │
     ▼             ▼      ▼             ▼
-┌──────────────────┐ ┌──────────────────────┐
-│ linglong-binary- │ │ linglong-source-     │
-│ runner           │ │ updater              │
-│                  │ │                      │
-│ pak_linyaps.sh   │ │ ll-builder build     │
-│                  │ │ ll-builder export    │
-└──────────────────┘ └──────────────────────┘
+┌──────────────────────────┐ ┌──────────────────────────┐
+│ linglong-binary-runner   │ │ linglong-source-updater  │
+│                          │ │                          │
+│ pak_linyaps.sh           │ │ ll-builder build         │
+│                          │ │ ll-builder export        │
+└──────────────────────────┘ └──────────────────────────┘
 ```
 
 ## 工作流
