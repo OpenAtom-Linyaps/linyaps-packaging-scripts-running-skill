@@ -1,58 +1,27 @@
-English | **[中文](README.zh-CN.md)**
+> [English](README.en-US.md) | **中文**
 
-# linyaps Packaging Runner
+# linyaps 打包任务执行器
 
-Automated task orchestration for [linyaps](https://www.linyaps.org.au/) packaging. Reads task definitions from **JSON** or **CSV** files and dispatches them to the appropriate sub-skill — **binary** tasks use `pak_linyaps.sh` for pre-adapted projects; **source** tasks use `ll-builder build` + `ll-builder export` for source-compiled projects.
+[linyaps](https://linyaps.org.cn/)（玲珑）打包脚本的自動化任務編排工具。從 **JSON** 或 **CSV** 任務文件讀取定義，按 `tasks[].type` 分派到對應子 SKILL：**binary**（預設）任務使用 `pak_linyaps.sh` 執行已適配項目打包；**source** 任務使用 `ll-builder build` + `ll-builder export` 執行源碼編譯打包。
 
-## Table of Contents
+## 架构
 
-- [Prerequisites](#prerequisites)
-- [Architecture Overview](#architecture-overview)
-- [Project Structure](#project-structure)
-- [Quick Start](#quick-start)
-- [Task File Formats](#task-file-formats)
-  - [JSON Format](#json-format)
-  - [CSV Format](#csv-format)
-- [Task Types](#task-types)
-  - [Binary (default)](#binary-default)
-  - [Source](#source)
-- [Command-Line Reference](#command-line-reference)
-  - [csv_to_json.sh](#csv_to_jsonsh)
-- [Execution Flow](#execution-flow)
-- [Architecture Validation](#architecture-validation)
-- [Troubleshooting](#troubleshooting)
-- [Notes](#notes)
-
----
-
-## Prerequisites
-
-| Dependency | Purpose |
-|------------|---------|
-| `bash` ≥ 4.0 | Script execution |
-| `python3` | JSON parsing, CSV conversion, architecture validation |
-| `curl` | Downloading upstream source packages |
-| `jq` (optional) | Human-readable JSON inspection |
-| `ll-builder` | Source-compiled tasks only |
-| `python3-ruamel.yaml` | Source tasks: linglong.yaml update |
-| `python3-yaml` | Source tasks: YAML validation |
-
-## Architecture Overview
+**Agent + Sub-Skill** 两层架构，由 OpenCode Agent 编排，4 个子 Skill 各自独立封装。
 
 ```
 User Task (JSON/CSV)
     │
     ▼
 ┌─────────────────────────────────────┐
-│  agents/linyaps-packaging-runner    │  ← Agent entry (dispatch logic)
-│  ├─ reads agent-config.json         │
-│  ├─ groups tasks by type            │
-│  └─ dispatches to sub-skill         │
+│  linyaps-packaging-runner (Agent)   │  ← 入口：分派逻辑
+│  ├─ 读取 agent-config.json          │
+│  ├─ 按 type 分组任务                │
+│  └─ 分派到子 SKILL                  │
 └──────────┬──────────────────────────┘
        type│                    type
     ┌──────┴──────┐      ┌──────┴──────┐
     │ binary      │      │ source      │
-    │ (or unset)  │      │             │
+    │ (或未指定)   │      │             │
     ▼             ▼      ▼             ▼
 ┌──────────────────┐ ┌──────────────────────┐
 │ linglong-binary- │ │ linglong-source-     │
@@ -63,446 +32,216 @@ User Task (JSON/CSV)
 └──────────────────┘ └──────────────────────┘
 ```
 
-## Project Structure
+## 工作流
+
+### Phase 1: 初始化
+
+| 步骤 | 职责 | 辅助脚本 |
+|------|------|----------|
+| 1.1 | 读取 `agent-config.json`，解析 `global` 与 `version_extract_examples` | — |
+| 1.2 | `${tag}` 路径解析：以 `date +"%Y-%m-%d"` 替换含 `${tag}` 的路径 | — |
+| 1.3 | 加载任务文件：CSV 先转 JSON；JSON 直接解析 | `csv_to_json.sh` |
+| 1.4 | 前置验证：binary 检查 `pak_linyaps.sh`；source 校验 `linglong.yaml` | `validate_projects.sh` / `validate-linglong-yaml.py` |
+
+### Phase 2: 分派执行
+
+| 任务类型 | 子 Skill | 执行脚本 |
+|----------|----------|----------|
+| `binary`（预设） | `linglong-binary-runner` | `run_tasks.sh` |
+| `source` | `linglong-source-updater` | `run_tasks.sh` |
+
+### Phase 3: 结果汇总
+
+合并各子 SKILL 结果，分类统计成功 / 失败，输出最终统计。
+
+## 目录结构
 
 ```
 .
 ├── agents/
-│   └── linyaps-packaging-runner.agent.md   # Agent entry point
-├── agent-config.json                       # Global configuration
+│   └── linyaps-packaging-runner.agent.md   # Agent 入口（分派逻辑）
+├── agent-config.json                       # 全局配置
 ├── scripts/
-│   ├── common.sh                           # Shared library (15 functions + build constraints)
-│   └── check-agent-status.sh               # Agent health check
-├── scripts-manifest.json                    # Script distribution map
+│   ├── common.sh                           # 共享函数库（15 个函数 + 构建约束）
+│   └── check-agent-status.sh               # Agent 健康检查
+├── scripts-manifest.json                   # 脚本位置分布映射表
 ├── skills/
 │   ├── config/
-│   │   └── arch_mapping.json               # URL arch keyword → linyaps arch
-│   ├── linglong-binary-runner/             # Binary packaging sub-skill
+│   │   └── arch_mapping.json               # URL 架构关键字 → linyaps arch
+│   ├── linglong-binary-runner/             # [子 SKILL] binary 打包
 │   │   ├── SKILL.md
 │   │   └── scripts/
-│   │       ├── common.sh                   # Shared library (copy)
-│   │       ├── run_tasks.sh                # Binary task executor
-│   │       └── validate_projects.sh        # Pre-flight check
-│   ├── linglong-source-updater/            # Source compilation sub-skill
-│       ├── SKILL.md
-│       ├── scripts/
-│       │   ├── common.sh                   # Shared library (copy)
-│       │   ├── run_tasks.sh                # Source task executor (6 steps)
-│       │   ├── download-and-checksum.sh    # Download + sha256 + analysis
-│       │   ├── update-linglong-yaml.py     # Insert sources/build rules
-│       │   └── validate-linglong-yaml.py   # Dual-mode YAML validator
-│       └── references/
-│           └── manifests-for-yaml.md       # linglong.yaml field spec
-│   ├── linyaps-packaging-precheck/          # Pre-flight environment check skill
+│   │       ├── common.sh                   # 共享库（副本）
+│   │       ├── run_tasks.sh                # Binary 任务执行器
+│   │       └── validate_projects.sh        # 前置检测
+│   ├── linglong-source-updater/            # [子 SKILL] source 编译打包
 │   │   ├── SKILL.md
+│   │   ├── references/
+│   │   │   └── manifests-for-yaml.md       # linglong.yaml 字段规范
 │   │   └── scripts/
-│   │       ├── common.sh                   # Shared library (copy)
-│   │       ├── precheck.sh                 # Unified pre-flight checker
-│   │       └── query_upstream.sh           # Upstream info lookup
-│   ├── linyaps-packaging-report/            # Artifact upload & status reporting
-│   │   ├── SKILL.md
-│   │   └── scripts/
-│   │       ├── common.sh                   # Shared library (copy)
-│   │       ├── status_upload.sh            # Upload + status report (regular)
-│   │       ├── status_upload_initOnly.sh   # Upload + status report (init-only)
-│   │       └── verify_upload.sh            # S3 upload verification
-│   └── linyaps-multica-packer-dispatch/     # Multica dispatch sub-skill
+│   │       ├── common.sh                   # 共享库（副本）
+│   │       ├── run_tasks.sh                # Source 任务执行器（6 步骤）
+│   │       ├── download-and-checksum.sh    # 下载 + sha256 + 分析
+│   │       ├── update-linglong-yaml.py     # 插入 sources/build 规则
+│   │       └── validate-linglong-yaml.py   # 双模式 YAML 验证器
+│   └── linyaps-multica-packer-dispatch/    # [子 SKILL] Multica 指派
 │       ├── SKILL.md
 │       └── scripts/
-│           ├── common.sh                   # Shared library (copy)
-│           ├── check-agent-status.sh        # Agent health check (copy)
-│           ├── csv_to_json.sh              # CSV-to-JSON converter & unified entry
-│           ├── detect_init_source.sh        # Init source detection
-│           └── dispatch.sh                 # Dispatch orchestrator
-├── for-multica/
-│   ├── agent.md                            # Multica platform adapter
-│   └── agent-config.json                   # Multica config
-├── example/                                # Example projects & generators
-├── task-example.json                       # Reference JSON (binary + source)
-└── REFACTOR-PLAN.md                        # Architecture design doc
+│           ├── common.sh                   # 共享库（副本）
+│           ├── check-agent-status.sh       # Agent 健康检查（副本）
+│           ├── csv_to_json.sh              # CSV 转 JSON & 统一入口
+│           ├── detect_init_source.sh       # 初始化来源检测
+│           └── dispatch.sh                 # 指派编排器
+└── task-example.json                       # 参考 JSON（binary + source）
 ```
 
-### Key Files Explained
+### 关键文件说明
 
-| File | Description |
-|------|-------------|
-| `agents/linyaps-packaging-runner.agent.md` | **Agent entry** — reads config, groups tasks by `type`, dispatches to sub-skills |
-| `agent-config.json` | Global config: `projects_root`, `output_dir`, `build_tmp_dir`, `src_dir` |
-| `skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh` | **Unified entry point** — accepts CSV or JSON, converts CSV to JSON, triggers agent dispatch |
-| `scripts/common.sh` | Shared library used by all sub-skill scripts (colored output, parse_json, download, arch validation, build retry + timeout, etc.) |
-| `skills/linglong-binary-runner/scripts/run_tasks.sh` | **Binary executor** — downloads sources, validates arch, runs `pak_linyaps.sh` per task |
-| `skills/linglong-source-updater/scripts/run_tasks.sh` | **Source executor** — 6-step pipeline (validate → download+checksum → update YAML → build → export) |
-| `skills/config/arch_mapping.json` | Maps URL arch keywords (`amd64`, `x64`, `aarch64`) to linyaps arch identifiers (`x86_64`, `arm64`) |
-| `scripts-manifest.json` | Script distribution map — tracks which skills carry copies of which root `scripts/` files |
-| `task-example.json` | Reference JSON task file with both binary and source task examples |
+| 文件 | 说明 |
+|------|------|
+| `agents/linyaps-packaging-runner.agent.md` | **Agent 入口** — 读取配置、按 `type` 分组任务、分派到子 SKILL |
+| `skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh` | **统一入口** — 接受 CSV 或 JSON，转换后触发 Agent 分派 |
+| `scripts/common.sh` | 所有子 SKILL 共享的函数库（颜色输出、parse_json、下载、架构验证、构建重试与超时等） |
+| `skills/linglong-binary-runner/scripts/run_tasks.sh` | **Binary 执行器** — 下载 → 架构验证 → 执行 `pak_linyaps.sh` |
+| `skills/linglong-source-updater/scripts/run_tasks.sh` | **Source 执行器** — 6 步骤管线（验证 → 下载校验 → 更新 YAML → 构建 → 导出） |
+| `skills/config/arch_mapping.json` | URL 架构关键字（`amd64`、`x64`、`aarch64`）映射到 linyaps 架构（`x86_64`、`arm64`） |
+| `task-example.json` | JSON 任务文件范例，含 binary 和 source 两种类型 |
 
----
+## 配置
 
-## Script Distribution
-
-The root [`scripts/`](scripts/) directory contains only **shared library** scripts
-(`common.sh`, `check-agent-status.sh`). Business scripts are organized by skill
-according to their workflow phase:
-
-- **Pre-flight** (`linyaps-packaging-precheck`): environment checks + upstream data lookup
-- **Packaging** (`linglong-binary-runner` / `linglong-source-updater`): build execution
-- **Reporting** (`linyaps-packaging-report`): artifact upload + status reporting
-- **Dispatch** (`linyaps-multica-packer-dispatch`): Multica platform assignment logic
-
-> **Maintenance rule**: Each skill's scripts directory is the single source of truth
-> for its scripts. See [`scripts-manifest.json`](scripts-manifest.json) for the complete mapping.
-
-| Script | Root (authoritative) | linglong-binary-runner | linglong-source-updater | linyaps-packaging-precheck | linyaps-packaging-report | linyaps-multica-packer-dispatch |
-|--------|:---:|:---:|:---:|:---:|:---:|:---:|
-| `common.sh` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `check-agent-status.sh` | ✅ | — | — | — | — | ✅ |
-| `csv_to_json.sh` | — | — | — | — | — | ✅ |
-| `precheck.sh` | — | — | — | ✅ | — | — |
-| `query_upstream.sh` | — | — | — | ✅ | — | — |
-| `status_upload.sh` | — | — | — | — | ✅ | — |
-| `status_upload_initOnly.sh` | — | — | — | — | ✅ | — |
-| `verify_upload.sh` | — | — | — | — | ✅ | — |
-| `detect_init_source.sh` | — | — | — | — | — | ✅ |
-| `dispatch.sh` | — | — | — | — | — | ✅ |
-
-### Per-Skill Script Inventory
-
-| Skill Path | Shared (copied from `scripts/`) | Private (skill-specific) |
-|------------|--------------------------------|--------------------------|
-| `skills/linglong-binary-runner/scripts/` | `common.sh` | `run_tasks.sh`, `validate_projects.sh` |
-| `skills/linglong-source-updater/scripts/` | `common.sh` | `run_tasks.sh`, `download-and-checksum.sh`, `update-linglong-yaml.py`, `validate-linglong-yaml.py` |
-| `skills/linyaps-packaging-precheck/scripts/` | `common.sh` | `precheck.sh`, `query_upstream.sh` |
-| `skills/linyaps-packaging-report/scripts/` | `common.sh` | `status_upload.sh`, `status_upload_initOnly.sh`, `verify_upload.sh` |
-| `skills/linyaps-multica-packer-dispatch/scripts/` | `common.sh`, `check-agent-status.sh` | `csv_to_json.sh`, `detect_init_source.sh`, `dispatch.sh` |
-
----
-
-## Quick Start
-
-### Using a CSV file
-
-```bash
-# 1. Prepare a CSV file with headers: 记录ID,包名,架构,版本,网站地址,下载地址
-
-# 2. Preview the generated JSON (dry-run mode)
-./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh my-tasks.csv --dry-run
-
-# 3. Execute packaging with your adapted projects
-./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh my-tasks.csv \
-  --projects_root=/path/to/adapted/projects
-```
-
-### Using a JSON file
-
-```bash
-# Direct execution with a JSON task file containing type=binary tasks
-./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh task-example.json
-```
-
-> **Note:** Starting directly with `csv_to_json.sh` is backward compatible — it detects JSON files and passes them through.
-
----
-
-## Task File Formats
-
-### JSON Format
-
-A JSON task file contains a `global` configuration block and a `tasks` array:
+`agent-config.json` 全局配置（固定路径 `WORKSPACE_ROOT/agent-config.json`）：
 
 ```json
 {
   "global": {
     "projects_root": "/path/to/projects",
-    "output_dir": "./output",
+    "projects_repo": "",
+    "output_dir": "./output/${tag}",
+    "data_dir": "./data/${tag}.log",
     "build_tmp_dir": "./build_cache",
     "src_dir": "./src"
   },
-  "tasks": [
+  "version_extract_examples": [
     {
-      "pkgName": "com.opera.browser",
-      "type": "binary",
-      "src_url": "https://download3.operacdn.com/pub/opera/desktop/130.0.5847.92/linux/opera-stable_130.0.5847.92_amd64.deb",
-      "arch": "x86_64",
-      "orig_version": "130.0.5847.92"
-    },
-    {
-      "pkgName": "com.example.sourceapp",
-      "type": "source",
-      "src_url": "https://example.com/sourceapp-2.0.tar.gz",
-      "arch": "x86_64",
-      "orig_version": "2.0",
-      "kind": "archive",
-      "name": "src"
+      "description": "Firefox tar.xz release",
+      "url_pattern": "firefox-{version}.en-US.linux-{arch}.tar.xz",
+      "extract_regex": "firefox-([0-9]+\\.[0-9]+(?:\\.[0-9]+)*)\\.en-US"
     }
   ]
 }
 ```
 
-#### Global Configuration
+| 字段 | 用途 | 预设值 |
+|------|------|--------|
+| `projects_root` | 已适配打包项目根目录 | `./projects` |
+| `projects_repo` | Git 仓库 URL（自动 clone/pull） | 空字符串 |
+| `output_dir` | 产出目录，支持 `${tag}` 占位符 | `./output/${tag}` |
+| `data_dir` | 数据记录目录 | `./data/${tag}.log` |
+| `build_tmp_dir` | 构建缓存目录 | `./build_cache` |
+| `src_dir` | 资源下载目录 | `./src` |
 
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `projects_root` | **Yes** | — | Root directory containing adapted packaging projects |
-| `output_dir` | No | `./output` | Directory for build outputs |
-| `build_tmp_dir` | No | *(auto-generated)* | Build cache directory |
-| `src_dir` | No | `./src` | Directory for downloaded source packages |
+> **`${tag}` 路径即时解析规则**：加载配置后立即以 `date +"%Y-%m-%d"` 替换 `${tag}` 为完整路径，后续所有步骤使用已解析的完整路径。
 
-#### Task Entry Fields
+**载入顺序（优先级从高到低）**：
 
-| Field | Required | Description |
-|-------|----------|-------------|
-| `pkgName` | **Yes** | Package name, used to locate project directory (e.g., `com.opera.browser`) |
-| `type` | No | Task type: `binary` (default) or `source` |
-| `src_url` | **Yes** | Upstream source download URL |
-| `arch` | **Yes** | Target architecture: `x86_64` or `arm64` |
-| `orig_version` | No | Upstream version string; auto-extracted from `src_url` if empty |
-| `kind` | Source only | Source kind: `archive`, `git`, `file`, `dsc` (default: `archive`) |
-| `name` | Source only | Source name field in linglong.yaml `sources` entry (default: `src`) |
+1. 任务 JSON 中的 `global` 区段
+2. `agent-config.json` 的 global 区段（fallback）
+3. 硬编码默认值
 
-**Optional: Version Extraction Patterns** (top-level `version_extract_examples`):
+## 任务文件格式
 
-When `orig_version` is empty, the script matches `src_url` against these regex patterns to extract the version automatically. See `agent-config.json` for examples.
+### JSON 格式
 
----
+JSON 任务文件包含 `global` 配置区块和 `tasks` 数组（见 `task-example.json`）。
 
-### CSV Format
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `pkgName` | **是** | 包名，用于定位项目目录（如 `com.opera.browser`） |
+| `type` | 否 | 任务类型：`binary`（预设）或 `source` |
+| `src_url` | **是** | 上游资源下载地址 |
+| `arch` | **是** | 目标架构：`x86_64` 或 `arm64` |
+| `orig_version` | 否 | 上游版本号；为空时从 `src_url` 自动提取 |
+| `kind` | Source 专用 | 源码类型：`archive`、`git`、`file`、`dsc`（预设：`archive`） |
+| `name` | Source 专用 | linglong.yaml 中 sources 条目的 name 字段（预设：`src`） |
 
-CSV files must use UTF-8 encoding with the following header row:
+### CSV 格式
 
-```csv
-记录ID,包名,架构,版本,网站地址,下载地址
+CSV 文件必须使用 UTF-8 编码，表头为：`记录ID,包名,架构,版本,网站地址,下载地址`。
+
+| CSV 字段 | JSON 字段 | 必填 | 说明 |
+|----------|-----------|------|------|
+| `包名` | `pkgName` | **是** | 包名，用于项目目录查找 |
+| `架构` | `arch` | **是** | 目标架构（`x86_64` / `arm64`） |
+| `版本` | `orig_version` | 否 | 上游版本号；为空时从 URL 自动提取 |
+| `下载地址` | `src_url` | **是** | 上游资源下载地址 |
+
+> **注意：** CSV 任务预设为 `type=binary`。如需 source 类型，请使用 JSON 格式并设定 `"type": "source"`。
+
+## 执行流程
+
+### Binary（预设）
+
+`pak_linyaps.sh` 为唯一入口，范围是已适配打包脚本的项目（目录下含 `pak_linyaps.sh` + `templates/linglong.yaml`）：
+
+1. 从 URL 提取版本号（如未提供）
+2. 架构验证（URL vs 宣告架构）
+3. 下载上游资源
+4. 定位项目（`CI_ll_<pkgName>` / `<pkgName>`）
+5. 检测 `--build_tmp_dir` 支援
+6. 执行 `pak_linyaps.sh`（含重试与超时）
+
+> **约束**：严禁改写 `linglong.yaml` 或直接调用 `ll-builder`。
+
+### Source（源码）
+
+范围是含 `linglong.yaml` 但无 `pak_linyaps.sh` 的源码项目，6 步骤管线：
+
+| 步骤 | 职责 |
+|------|------|
+| S-1 | 验证输入 `linglong.yaml`（无 sources 段） |
+| S-2 | 下载 + sha256 + 目录分析 |
+| S-3 | 插入 sources + 修正 build 规则 |
+| S-4 | 验证输出 `linglong.yaml`（有 sources 段） |
+| S-5 | `ll-builder build` |
+| S-6 | `ll-builder export --layer --no-develop -z zstd`，移动 `.layer` 到 output_dir |
+
+> **约束**：输入 `linglong.yaml` 必须通过预验证；build 规则必须使用 `${PREFIX}` 路径。
+
+## 架构验证
+
+下载前验证任务宣告架构与下载 URL 隐含架构是否匹配：
+
+| 结果 | 行为 |
+|------|------|
+| **MATCH** | ✅ 继续执行打包 |
+| **MISMATCH** | ❌ 跳过任务，计入失败统计 |
+| **UNKNOWN** | ⚠️ 输出 LLM 分析提示，继续执行 |
+
+## 测试
+
+```bash
+# 预览 CSV 转 JSON（dry-run 模式，不执行打包）
+./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh my-tasks.csv --dry-run
+
+# 使用已适配项目执行打包
+./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh my-tasks.csv \
+  --projects_root=/path/to/adapted/projects
+
+# 直接使用 JSON 任务文件
+./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh task-example.json
 ```
 
-#### Field Mapping
+## 约束条件
 
-| CSV Column | JSON Field | Required | Description |
-|------------|------------|----------|-------------|
-| `记录ID` | *(ignored)* | No | Reference ID, not used |
-| `包名` | `pkgName` | **Yes** | Package name for project directory lookup |
-| `架构` | `arch` | **Yes** | Target architecture (`x86_64` / `arm64`) |
-| `版本` | `orig_version` | No | Upstream version; auto-extracted from URL if empty |
-| `网站地址` | *(ignored)* | No | Project homepage, not used |
-| `下载地址` | `src_url` | **Yes** | Upstream source download URL |
-
-> **Note:** CSV tasks are treated as `type=binary` by default. For source tasks, use JSON format with `"type": "source"`.
-
-#### Data Cleaning
-
-The converter automatically handles:
-- **Whitespace trimming**: Leading/trailing spaces and tabs removed
-- **Header aliases**: Both simplified (下载地址) and traditional (下載地址) Chinese headers accepted
-- **Row skipping**: Rows missing required fields silently skipped
-
-#### Global Configuration for CSV
-
-Since CSV files have no `global` section, configuration is provided via:
-
-1. **Command-line arguments** (highest priority):
-   ```bash
-   ./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh tasks.csv \
-     --projects_root=/path/to/projects \
-     --output_dir=./output
-   ```
-
-2. **JSON config file** (`--config`):
-   ```bash
-   ./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh tasks.csv --config=global_config.json
-   ```
-
-3. **Default values** (lowest priority):
-   | Parameter | Default |
-   |-----------|---------|
-   | `projects_root` | `./projects` |
-   | `output_dir` | `./output` |
-   | `build_tmp_dir` | *(auto-generated)* |
-   | `src_dir` | `./src` |
-
----
-
-## Task Types
-
-### Binary (default)
-
-- **Entry point**: `pak_linyaps.sh`
-- **Scope**: Pre-adapted packaging projects (project directory contains `pak_linyaps.sh` + `templates/linglong.yaml`)
-- **Sub-skill**: `linglong-binary-runner`
-- **Execution**: Download source → validate arch → locate project → run `pak_linyaps.sh` (with retry + timeout)
-- **Constraint**: Must NOT modify `linglong.yaml` or call `ll-builder` directly
-
-### Source
-
-- **Entry point**: `ll-builder build` + `ll-builder export`
-- **Scope**: Source projects with a `linglong.yaml` (but no `pak_linyaps.sh`)
-- **Sub-skill**: `linglong-source-updater`
-- **Execution**: 6-step pipeline — validate → download+checksum → update YAML → validate output → build → export (with retry + timeout on build/export)
-- **Constraint**: Input `linglong.yaml` must pass pre-validation (no `sources` section); build rules must use `${PREFIX}` paths
-
----
-
-## Command-Line Reference
-
-### csv_to_json.sh
-
-**Unified entry point** — accepts both CSV and JSON files, converts CSV to JSON, then triggers the agent dispatch flow.
-
-```
-./skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh <task.csv|task.json> [options]
-```
-
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--projects_root=<path>` | `./projects` | Root directory of adapted packaging projects |
-| `--output_dir=<path>` | `./output` | Output directory for build artifacts |
-| `--build_tmp_dir=<path>` | *(auto)* | Build cache directory |
-| `--src_dir=<path>` | `./src` | Directory for downloaded source packages |
-| `--config=<file.json>` | *(none)* | JSON config file providing `global` settings |
-| `--output=<file.json>` | *(auto)* | Output path for the generated JSON task file |
-| `--dry-run` | `false` | Generate JSON only; do not execute packaging |
-| `--help` | — | Show usage information |
-
-**Behavior by file type:**
-- **CSV input** → Converts to JSON → Agent dispatches tasks by type
-- **JSON input** → Passes through directly to agent dispatch
-
----
-
-## Execution Flow
-
-```
-┌──────────────────────────────────────────────────────────────┐
-│  1. Load Configuration                                       │
-│     agent-config.json → global settings + version patterns   │
-├──────────────────────────────────────────────────────────────┤
-│  2. Parse & Initialize                                       │
-│     CSV → csv_to_json.sh → JSON                              │
-│     JSON → direct use                                        │
-│     Create: src_dir, output_dir, build_tmp_dir               │
-├──────────────────────────────────────────────────────────────┤
-│  3. Dispatch by Type (Agent Phase)                           │
-│     ┌──────────────────────────────────────────────────┐     │
-│     │ Group tasks by tasks[].type (default: "binary")   │     │
-│     │ Write subtask JSON for each group                  │     │
-│     │ Call sub-skill:                                     │     │
-│     │   binary → linglong-binary-runner                  │     │
-│     │   source → linglong-source-updater                 │     │
-│     └──────────────────────────────────────────────────┘     │
-├──────────────────────────────────────────────────────────────┤
-│  4. Binary Execution (per task)                              │
-│     ┌──────────────────────────────────────────────────┐     │
-│     │ a. Extract version from URL (if empty)            │     │
-│     │ b. Validate architecture (URL vs declared arch)   │     │
-│     │ c. Download source package                        │     │
-│     │ d. Locate project (CI_ll_<pkgName> / <pkgName>)  │     │
-│     │ e. Detect --build_tmp_dir support                 │     │
-│     │ f. Execute pak_linyaps.sh                         │     │
-│     └──────────────────────────────────────────────────┘     │
-├──────────────────────────────────────────────────────────────┤
-│  5. Source Execution (6 steps per task)                      │
-│     ┌──────────────────────────────────────────────────┐     │
-│     │ S-1: Validate input linglong.yaml (no sources)    │     │
-│     │ S-2: Download + sha256 + directory analysis       │     │
-│     │ S-3: Insert sources + fix build rules in YAML     │     │
-│     │ S-4: Validate output linglong.yaml (has sources)  │     │
-│     │ S-5: ll-builder build                             │     │
-│     │ S-6: ll-builder export → move .layer to output    │     │
-│     └──────────────────────────────────────────────────┘     │
-├──────────────────────────────────────────────────────────────┤
-│  6. Output Summary                                           │
-│     Total / Success / Fail counts + per-task details         │
-└──────────────────────────────────────────────────────────────┘
-```
-
-Each task produces a log file at `<output_dir>/<pkgName>.log`.
-
-### Build Constraints
-
-Both binary and source builds apply automatic retry and timeout controls, configurable via environment variables:
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MAX_BUILD_ATTEMPTS` | `2` | Maximum execution attempts per build task (first attempt + 1 retry) |
-| `BUILD_TIMEOUT_SEC` | `1800` | Per-attempt timeout in seconds (30 minutes) |
-
-- **Binary**: The entire `pak_linyaps.sh` invocation is wrapped with retry + timeout.
-- **Source**: Steps S-5 (`ll-builder build`) and S-6 (`ll-builder export`) each have an individual timeout; if S-6 fails, the retry restarts from S-5.
-- Failed attempts wait 10 seconds before retrying.
-
----
-
-## Architecture Validation
-
-Before downloading, the script validates that the architecture declared in the task matches the architecture implied by the download URL.
-
-### How It Works
-
-1. **Token matching**: Scans the URL for known architecture keywords from `arch_mapping.json`
-   - `amd64`, `x64`, `x86_64`, `intel` → `x86_64`
-   - `arm64`, `aarch64`, `armv8` → `arm64`
-   - `i386`, `i686`, `armhf`, `armv7` → unsupported (triggers mismatch)
-
-2. **Regex matching**: Applies URL-pattern-specific rules
-   - `linux-deb-x64/stable` → `x86_64` (VS Code style)
-   - `_amd64.deb` → `x86_64` (Debian package suffix)
-
-3. **Result handling**:
-
-   | Result | Behavior |
-   |--------|----------|
-   | **MATCH** | ✅ Proceed with packaging |
-   | **MISMATCH** | ❌ Skip task, count as failure |
-   | **UNKNOWN** | ⚠️ Print LLM analysis prompt, continue execution |
-
-### Example
-
-```
-[OK] 架構驗證通過: URL 含架構(x86_64) → 宣告 arch(x86_64) ✓
-[ERROR] 架構不匹配: URL 含架構(x86_64)，但宣告 arch 為 arm64
-```
-
----
-
-## Troubleshooting
-
-### "找不到項目目錄" (Project directory not found)
-
-The script looks for project directories under `projects_root` in this order:
-1. `CI_ll_<pkgName>/pak_linyaps.sh`
-2. `<pkgName>/pak_linyaps.sh`
-3. Fuzzy match: any directory containing `<pkgName>` with a `pak_linyaps.sh`
-
-**Solution**: Ensure your adapted projects are in `projects_root` and follow the `CI_ll_<pkgName>` naming convention.
-
-### "架構不匹配" (Architecture mismatch)
-
-The URL contains architecture keywords that contradict the declared `arch` field.
-
-**Solution**: Verify the `arch` field in your task file matches the actual package architecture. Check `skills/config/arch_mapping.json` for supported mappings.
-
-### "無法從 URL 提取版本號" (Cannot extract version from URL)
-
-The `orig_version` field is empty and the URL doesn't match any known version pattern.
-
-**Solution**: Explicitly set `orig_version` in your task file, or add a new pattern to `version_extract_examples` in `agent-config.json`.
-
-### "CSV 缺少必要欄位" (CSV missing required columns)
-
-The CSV file is missing one or more of: `包名`, `下载地址`, `架构`.
-
-**Solution**: Ensure your CSV file includes the header row with all required columns.
-
-### Download fails for redirect URLs
-
-Some URLs (e.g., VS Code's `update.code.visualstudio.com/latest/...`) require redirect following.
-
-**Solution**: The script automatically handles redirects via `curl -L`. If issues persist, pre-download the file and use a direct URL.
-
----
-
-## Notes
-
-- **`--build_tmp_dir` support is not universal**: The script auto-detects whether a project's `pak_linyaps.sh` supports this parameter. If unsupported, the parameter is silently omitted.
-- **Execution permissions**: Ensure `pak_linyaps.sh` scripts have execute permission (`chmod +x`).
-- **UTF-8 encoding**: CSV files must be UTF-8 encoded. Both simplified and traditional Chinese headers are supported.
-- **Concurrent execution**: Tasks run sequentially. For parallel execution, split your task file and run multiple instances with separate `output_dir` and `build_tmp_dir` values.
-- **Backward compatibility**: `csv_to_json.sh` transparently handles JSON files as a single unified entry point.
-- **Symbolic link setup**: When using this repo as an opencode skill, set up `.opencode/` symlinks as described in `REFACTOR-PLAN.md`.
+| 议题 | 决策 |
+|------|------|
+| 任务分派 | 按 `tasks[].type` 分组（预设 `binary`），分别分派到对应子 SKILL |
+| `${PREFIX}` 安装目录 | `build` 段所有安装目录参数必须使用 `${PREFIX}`，禁止硬编码 `/usr` 或 `/usr/local`（系统命令如 `apt-get`、`dpkg` 中的 `/usr` 除外） |
+| `.linyaps_genius` | source 的 build 段必须包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}` |
+| 重试与超时 | 每个构建任务最多 `MAX_BUILD_ATTEMPTS`（2）次，单次超时 `BUILD_TIMEOUT_SEC`（1800 秒），重试间隔 10 秒 |
+| 多架构 | 多架构版本不一致时，优先使用 x86_64 架构的版本 |
+| 架构映射 | `arch_mapping.json` 为主，无法识别时留给 LLM 分析 |
+| CSV 编码 | UTF-8 编码，同时支持简体（下载地址）和繁体（下載地址）中文表头 |
+| 版本提取 | `orig_version` 为空时，匹配 `version_extract_examples` 正则从 URL 提取 |
+| 执行权限 | `pak_linyaps.sh` 需具有执行权限（`chmod +x`） |
+| 路径约定 | 所有脚本调用使用相对于 workspace 根目录的路径，不使用 `cd` 切换后执行 |
