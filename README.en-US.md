@@ -1,6 +1,6 @@
 English | **[中文](README.md)**
 
-# linyaps-packaging-runner
+# linyaps-packaging-scripts-running-skill
 
 Automated task orchestration for [linyaps](https://linyaps.org.cn/) packaging. Reads task definitions from **JSON** or **CSV** files and dispatches them by `tasks[].type` to the matching sub-skill: **binary** (default) tasks run pre-adapted projects via `pak_linyaps.sh`; **source** tasks compile and package via `ll-builder build` + `ll-builder export`.
 
@@ -13,7 +13,7 @@ User Task (JSON/CSV)
     │
     ▼
 ┌─────────────────────────────────────┐
-│  linyaps-packaging-runner (Agent)   │  ← Entry: dispatch logic
+│  linyaps-packaging-scripts-running-skill (Agent)   │  ← Entry: dispatch logic
 │  ├─ reads agent-config.json         │
 │  ├─ groups tasks by type            │
 │  └─ dispatches to sub-skill         │
