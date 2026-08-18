@@ -202,9 +202,25 @@ run_source_task() {
 
     local build_phase_ok=false
     local build_attempt=1
+    local state_file="${TMPDIR:-/tmp}/ll-build-${pkg_name}.state"
+
+    # run_monitored_build — 用 monitor-build.sh 後台啟動 + wait，避免前台長構建
+    # $1=state, $2=log(總日誌), $3=timeout; 其餘為命令
+    # 構建輸出先寫入 <log>.build，完成後追加到總日誌，保留原始 >> 語義。
+    run_monitored_build() {
+        local st="$1" lg="$2" to="$3"; shift 3
+        local blg="${lg}.build"
+        (cd "$project_dir" && bash "$SCRIPT_DIR/monitor-build.sh" start "$st" --timeout "$to" --log "$blg" -- "$@" >/dev/null 2>&1)
+        local rc
+        bash "$SCRIPT_DIR/monitor-build.sh" wait "$st" --timeout "$to"
+        rc=$?
+        cat "$blg" >> "$lg" 2>/dev/null || true
+        return "$rc"
+    }
+
     while [[ $build_attempt -le $MAX_BUILD_ATTEMPTS ]]; do
         log_info "Step S-5: ll-builder build 開始（第 ${build_attempt}/${MAX_BUILD_ATTEMPTS} 次）..."
-        if (cd "$project_dir" && timeout "$BUILD_TIMEOUT_SEC" ll-builder build --skip-output-check >> "$log_file" 2>&1); then
+        if run_monitored_build "$state_file" "$log_file" "$BUILD_TIMEOUT_SEC" ll-builder build --skip-output-check; then
             log_ok "ll-builder build 成功"
         else
             local build_exit=$?
@@ -225,7 +241,7 @@ run_source_task() {
         fi
 
         log_info "Step S-6: ll-builder export 開始（第 ${build_attempt}/${MAX_BUILD_ATTEMPTS} 次）..."
-        if (cd "$project_dir" && timeout "$BUILD_TIMEOUT_SEC" ll-builder export --layer --no-develop -z zstd >> "$log_file" 2>&1); then
+        if run_monitored_build "$state_file" "$log_file" "$BUILD_TIMEOUT_SEC" ll-builder export --layer --no-develop -z zstd; then
             log_ok "ll-builder export 成功"
             build_phase_ok=true
             break
