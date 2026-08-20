@@ -294,6 +294,66 @@ supports_build_tmp_dir() {
     grep -q 'build_tmp_dir' "$script_path" 2>/dev/null
 }
 
+# sync_projects_root — 安全同步 projects_root 打包脚本仓库（fetch + stash -u + rebase + stash pop）
+# 参数:
+#   $1  repo_url       — Git 仓库 URL（projects_repo）
+#   $2  root           — 目标目录（projects_root）
+# 返回:
+#   0  成功 / 无需同步 / 未配置 repo
+#   1  clone 或 rebase / stash 冲突，需阻断流程（本地改动保留在 stash / 工作区，不丢失）
+sync_projects_root() {
+    local repo_url="$1"
+    local root="$2"
+
+    if [[ -z "$repo_url" ]]; then
+        log_warn "未配置 projects_repo，跳过同步"
+        return 0
+    fi
+
+    if [[ ! -e "$root/.git" ]]; then
+        log_info "克隆打包脚本仓库: $repo_url"
+        if ! git clone "$repo_url" "$root" 2>&1; then
+            log_err "克隆失败: $repo_url"
+            return 1
+        fi
+        return 0
+    fi
+
+    if ! git -C "$root" fetch origin 2>&1; then
+        log_warn "git fetch 失败，保留现有快取继续"
+        return 0
+    fi
+
+    local branch behind
+    branch=$(git -C "$root" rev-parse --abbrev-ref HEAD)
+    behind=$(git -C "$root" rev-list --count "HEAD..origin/$branch" 2>/dev/null || echo 0)
+    if [[ "$behind" == "0" ]]; then
+        log_ok "projects_root 已是最新"
+        return 0
+    fi
+
+    log_info "本地落后上游 $behind 个提交，开始安全同步"
+
+    if git -C "$root" stash push -u -m "linyaps-presync" >/dev/null 2>&1; then
+        if ! git -C "$root" rebase --autostash "origin/$branch" 2>&1; then
+            git -C "$root" rebase --abort >/dev/null 2>&1
+            log_err "rebase 冲突，已中止，本地改动保留在 stash，阻断本次任务"
+            return 1
+        fi
+        if ! git -C "$root" stash pop 2>&1; then
+            log_err "stash 恢复冲突，本地改动保留在工作区，阻断本次任务"
+            return 1
+        fi
+    else
+        if ! git -C "$root" rebase --autostash "origin/$branch" 2>&1; then
+            git -C "$root" rebase --abort >/dev/null 2>&1
+            log_err "rebase 冲突，已中止，阻断本次任务"
+            return 1
+        fi
+    fi
+    return 0
+}
+
 find_project_dir() {
     local pkg_name="$1"
     local root="$2"
