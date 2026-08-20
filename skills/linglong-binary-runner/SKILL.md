@@ -14,7 +14,7 @@ user-invocable: false
 - 執行腳本：`skills/linglong-binary-runner/scripts/run_tasks.sh`
 - 驗證腳本：`skills/linglong-binary-runner/scripts/validate_projects.sh`
 - 構建進度檢測：`skills/linglong-binary-runner/scripts/check-build-active.sh`
-- 共享庫：`skills/linglong-binary-runner/scripts/common.sh`
+- 共享庫：`skills/linglong-binary-runner/scripts/common.sh`（含 `sync_projects_root`）
 - 架構映射：`skills/config/arch_mapping.json`
 
 ## 輸入
@@ -41,16 +41,17 @@ user-invocable: false
 
 ## 執行流程
 
-1. **解析 JSON**：讀取 `projects_root`、`output_dir`、`build_tmp_dir`、`src_dir`
-2. **初始化目錄**：建立 src_dir、output_dir、build_tmp_dir
-3. **對每個任務**：
+1. **解析 JSON**：讀取 `projects_root`、`projects_repo`、`output_dir`、`build_tmp_dir`、`src_dir`
+2. **同步 projects_root**（`run_tasks.sh` 內建）：若配置 `global.projects_repo`，打包前對 `<projects_root>` 執行安全同步（fetch → 落後檢測 → `stash -u` → `rebase --autostash` → `stash pop`，衝突即阻斷 `exit 1`）
+3. **初始化目錄**：建立 src_dir、output_dir、build_tmp_dir
+4. **對每個任務**：
    - 從 URL 提取版本號（若未提供）
    - 架構匹配驗證（以 arch_mapping.json）
    - 下載原始資源
    - 查找項目目錄（查找 pak_linyaps.sh）
    - 檢測 `--build_tmp_dir` 支援
    - 執行 `pak_linyaps.sh` 打包
-4. **輸出結果統計**
+5. **輸出結果統計**
 
 ## 約束
 

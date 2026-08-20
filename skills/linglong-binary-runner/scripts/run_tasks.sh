@@ -49,6 +49,9 @@ log_info "項目根目錄: $PROJECTS_ROOT"
 log_info "輸出目錄:   $OUTPUT_DIR"
 log_info "資源目錄:   $SRC_DIR"
 
+PROJECTS_REPO=$(json_strip "$PROJECTS_REPO")
+sync_projects_root "$PROJECTS_REPO" "$PROJECTS_ROOT" || exit 1
+
 init_directories
 
 SUCCESS_COUNT=0

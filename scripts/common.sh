@@ -78,6 +78,7 @@ with open(sys.argv[1]) as f:
 
 g = data.get('global', {})
 print('PROJECTS_ROOT=' + json.dumps(g.get('projects_root', '')))
+print('PROJECTS_REPO=' + json.dumps(g.get('projects_repo', '')))
 print('OUTPUT_DIR=' + json.dumps(g.get('output_dir', './output')))
 print('BUILD_TMP_DIR=' + json.dumps(g.get('build_tmp_dir', '')))
 print('SRC_DIR=' + json.dumps(g.get('src_dir', './src')))
