@@ -36,6 +36,88 @@ check_python3() {
     fi
 }
 
+# ---- multica 精确 UUID 解析基元 ----
+# 本仓库要求 issue / agent / workspace 一律以 multica 返回的精确 UUID 管理，
+# 禁止 grep issue-\d+ / comment-\d+ / --to <slug> 等字符串/模糊匹配。
+
+UUID_RE='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+
+# is_uuid <val> — 校验是否为精确 UUID
+is_uuid() {
+    [[ "${1:-}" =~ ^${UUID_RE}$ ]]
+}
+
+# get_issue_id — 当前 workspace 最新的 issue UUID id
+# 返回码: 0=成功 1=无 issue 2=CLI 异常 3=无效 uuid；成功时输出 uuid
+get_issue_id() {
+    local out id
+    out=$(multica issue list --output json --limit 1 2>/dev/null) || return 2
+    [[ -z "$out" ]] && return 1
+    id=$(python3 -c "import json,sys
+d=json.load(sys.stdin)
+print(d['issues'][0]['id'] if d.get('issues') else '')" <<<"$out") 2>/dev/null || return 2
+    [[ -z "$id" ]] && return 1
+    if ! is_uuid "$id"; then log_warn "[multica] invalid_uuid: $id"; return 3; fi
+    echo "$id"
+    return 0
+}
+
+# get_agent_uuid_by_name <CLI 真实 agent name> — 按 CLI 真实 name 提取 agent uuid
+# 返回码: 0=成功 1=name/列表为空 2=CLI 异常 3=未匹配 4=无效 uuid；成功时输出 uuid
+get_agent_uuid_by_name() {
+    local name="$1" out id
+    [[ -z "$name" ]] && return 1
+    out=$(multica agent list --output json 2>/dev/null) || return 2
+    [[ -z "$out" ]] && return 1
+    id=$(python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+L=d if isinstance(d,list) else d.get('agents', d.get('items', []))
+for a in L:
+    if a.get('name')==sys.argv[1]:
+        print(a['id']); sys.exit(0)
+sys.exit(1)" "$name" <<<"$out") 2>/dev/null || return 3
+    if ! is_uuid "$id"; then log_warn "[multica] invalid_uuid: $id"; return 4; fi
+    echo "$id"
+    return 0
+}
+
+# get_comment_id <issue_id> <content> — add comment 并提取 comment uuid
+# 返回码: 0=成功 1=参数/评论为空 2=CLI 异常 3=无效 uuid；成功时输出 comment uuid
+get_comment_id() {
+    local issue_id="$1" content="$2" out id
+    if [[ -z "$issue_id" || -z "$content" ]]; then return 1; fi
+    out=$(multica issue comment add "$issue_id" --content "$content" --output json 2>/dev/null) || return 2
+    [[ -z "$out" ]] && return 1
+    id=$(python3 -c "import json,sys
+d=json.load(sys.stdin)
+print(d.get('id','') if isinstance(d,dict) else '')" <<<"$out") 2>/dev/null || return 2
+    [[ -z "$id" ]] && return 1
+    if ! is_uuid "$id"; then log_warn "[multica] invalid_comment_uuid: $id"; return 3; fi
+    echo "$id"
+    return 0
+}
+
+# get_workspace_id <slug> — 按 slug 解析 workspace uuid
+# 返回码: 0=成功 1=空 2=CLI 异常 3=未匹配 4=无效 uuid；成功时输出 uuid
+get_workspace_id() {
+    local slug="$1" out id
+    [[ -z "$slug" ]] && return 1
+    out=$(multica workspace list --output json 2>/dev/null) || return 2
+    [[ -z "$out" ]] && return 1
+    id=$(python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+L=d if isinstance(d,list) else d.get('workspaces', d.get('items', []))
+for w in L:
+    if w.get('slug')==sys.argv[1]:
+        print(w['id']); sys.exit(0)
+sys.exit(1)" "$slug" <<<"$out") 2>/dev/null || return 3
+    if ! is_uuid "$id"; then log_warn "[multica] invalid_workspace_uuid: $id"; return 4; fi
+    echo "$id"
+    return 0
+}
+
 parse_json() {
     python3 -c "
 import json, sys

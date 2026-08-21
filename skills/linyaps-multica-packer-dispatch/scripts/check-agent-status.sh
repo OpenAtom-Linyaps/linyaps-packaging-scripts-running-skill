@@ -60,9 +60,20 @@ trap 'rm -rf "$TMPDIR"' EXIT
 
 # ---------- [1/3] switch workspace ----------
 echo "[1/3] 切换 workspace ..." >&2
-WS_SWITCH=$(multica workspace switch "$WORKSPACE" 2>&1)
-WORKSPACE_ID=$(echo "$WS_SWITCH" | grep -oP '\(([0-9a-f\-]+)\)' | tr -d '()')
-echo "       workspace: $WORKSPACE → $WORKSPACE_ID" >&2
+multica workspace switch "$WORKSPACE" >/dev/null 2>&1 || true
+WORKSPACE_ID=$(multica workspace list --output json 2>/dev/null | python3 -c "
+import json,sys
+try:
+    d=json.load(sys.stdin)
+    L=d if isinstance(d,list) else d.get('workspaces', d.get('items', []))
+    slug=sys.argv[1]
+    for w in L:
+        if w.get('slug')==slug:
+            print(w['id']); break
+except Exception:
+    pass
+" "$WORKSPACE" 2>/dev/null)
+echo "       workspace: $WORKSPACE → ${WORKSPACE_ID:-N/A}" >&2
 
 # ---------- [2/3] find agent ----------
 echo "[2/3] 查找 agent ..." >&2
