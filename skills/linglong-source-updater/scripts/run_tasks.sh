@@ -280,13 +280,14 @@ run_source_task() {
     fi
 
     local layer_file
-    layer_file=$(find "$project_dir" -maxdepth 1 -name "*.layer" -type f 2>/dev/null | head -1)
+    # Issue-60: 僅收集 mtime 晚於本輪構建開始的 .layer，避免把上一輪遺留 .layer 冒當本轮成功產物。
+    layer_file=$(find "$project_dir" -maxdepth 1 -name "*.layer" -type f -newermt "@$start_time" 2>/dev/null | head -1)
     if [[ -n "$layer_file" ]]; then
         mkdir -p "$OUTPUT_DIR"
         mv "$layer_file" "$OUTPUT_DIR/"
         log_ok "產物移動到: $OUTPUT_DIR/$(basename "$layer_file")"
     else
-        log_warn "未找到 .layer 產物文件"
+        log_warn "未找到本轮 .layer 產物文件（歷史遺留 .layer 不作為本輪成功）"
     fi
 
     local end_time

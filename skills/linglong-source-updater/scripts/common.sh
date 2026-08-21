@@ -438,8 +438,15 @@ find_project_dir() {
     fi
 
     local found
-    found=$(find "$root" -maxdepth 2 -type d -name "*${pkg_name}*" 2>/dev/null | head -1)
-    if [[ -n "$found" && -f "$found/pak_linyaps.sh" ]]; then
+    found=$(
+        find "$root" -maxdepth 2 -type d \( -name "CI_ll_${pkg_name}" -o -name "$pkg_name" \) 2>/dev/null | while read -r d; do
+            local base="${d##*/}"
+            [[ "$base" == "CI_ll_${pkg_name}" || "$base" == "$pkg_name" ]] || continue
+            [[ -f "$d/pak_linyaps.sh" ]] && echo "$d"
+        done
+    )
+    found=$(printf '%s\n' "$found" | sort -u | head -1)
+    if [[ -n "$found" ]]; then
         echo "$found"
         return
     fi
@@ -463,9 +470,18 @@ find_source_project_dir() {
         return
     fi
 
+    # Issue-60: 降级路径仅接受精确目录名 CI_ll_<pkg> 或 <pkg>，并须存在 linglong.yaml，
+    # 排除子串模糊命中的历史/无关目录。
     local found
-    found=$(find "$root" -maxdepth 2 -type d -name "*${pkg_name}*" 2>/dev/null | head -1)
-    if [[ -n "$found" && -f "$found/linglong.yaml" ]]; then
+    found=$(
+        find "$root" -maxdepth 2 -type d \( -name "CI_ll_${pkg_name}" -o -name "$pkg_name" \) 2>/dev/null | while read -r d; do
+            local base="${d##*/}"
+            [[ "$base" == "CI_ll_${pkg_name}" || "$base" == "$pkg_name" ]] || continue
+            [[ -f "$d/linglong.yaml" ]] && echo "$d"
+        done
+    )
+    found=$(printf '%s\n' "$found" | sort -u | head -1)
+    if [[ -n "$found" ]]; then
         echo "$found"
         return
     fi

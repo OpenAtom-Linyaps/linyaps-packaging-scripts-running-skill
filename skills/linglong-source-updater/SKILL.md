@@ -114,6 +114,11 @@ python3 skills/linglong-source-updater/scripts/validate-linglong-yaml.py <projec
 
 > 如果使用 `download-and-checksum.sh` 時不需要預先執行 validate（該腳本在步驟內已隱含前提檢查），但首次調用 validate-linglong-yaml.py（A-1）是檢查起始狀態的必要步驟。
 
+> **Issue-60 防護（版本強覆蓋）**：項目目錄跨輪保留以復用緩存，因此 `package.version` 必須以**本輪** `orig_version` 強覆蓋，禁止沿襲項目內歷史版本。
+> - `orig_version` 必須非空且來自**本輪任務**；從 `src_url` 提取失敗（空/缺參）視為**阻塞**，不得沿用目錄內歷史 `version` 繼續。
+> - A-3 調用 `update-linglong-yaml.py` **必須傳 `--version=<本轮 orig_version>`**；若解析後 `--version` 為空或缺參，**中止**並重新執行 A-2~A-3，不得帶舊值繼續。
+> - Phase B 檢閱時核對 `package.version` 與 `orig_version` 一致、`sources[].digest` 為本輪 `dl_digest`，發現不一致即重新執行 A-2~A-3。
+
 ### Phase B: LLM 只讀檢閱
 
 Phase A 完成後，LLM **只讀**檢閱生成的 `linglong.yaml` 確認正確性：
@@ -167,6 +172,8 @@ done
 其中 `STATE` 建議為 `${TMPDIR:-/tmp}/ll-build-${pkgName}.state`。`status` 返回 0=已結束、1=仍進行中；構建退出碼從其輸出 `EXIT=<code>` 讀取，不通過退出碼透傳（避免與「進行中」衝突）。build 成功後以同法啟動並輪詢 export。**不可把輪詢合併成一條含 `sleep` 的阻塞腳本**——那又回到前台無輸出狀態。
 
 > **鎖說明**：鎖目錄為 `<projects_root>/.linyaps-locks/.linyaps-build-<pkgName>.lock/`，按 pkgName 互斥；同一 pkgName 同時僅一個構建進程。`acquire_build_lock` 通過原子 `mkdir` 互斥，並自動回收進程崩潰殘留的陳舊鎖（比對 `owner` 中 PID 是否存活）。釋放後才允許下一個同 pkgName 任務。構建期間**不得刪除項目目錄**（僅原地更新文件）以復用依賴緩存。
+
+> **Issue-60 防護（产物校勘）**：僅以**本輪** `ll-builder export` 生成、且 `mtime` 晚於本輪構建開始的 `.layer` 作為產物上拋/搬運；目錄中早於本輪構建開始的歷史 `.layer` **不算**本輪成功，不得上報/搬運。禁止以 `find ... -name "*.layer" | head -1` 冒認本輪成功（見 `run_tasks.sh` 的 `-newermt` 處理）。未採集到本輪 `.layer` 即按本輪失敗處理，不得用歷史產物頂替。
 
 若項目需要等待構建進程，參考下方的「構建進度檢測」。
 

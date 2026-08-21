@@ -205,6 +205,7 @@ for task_type, task_list in tasks_by_type.items():
 ### source 類型約束
 - 使用 `ll-builder build` + `ll-builder export`，不依賴 `pak_linyaps.sh`
 - 輸入的 `linglong.yaml` 必須先通過 validate 檢測
+- **Issue-60 防護（本轮产物）**：構建**只復用 ll-builder 依賴緩存**；`linglong.yaml` 的 `version`/`sources` 與 `.layer` 產物均須為**本輪**，不得把上一輪遺留產物作為本輪結果。`orig_version` 為空/提取失敗 → **阻塞**，不得沿襲歷史 `version`；`package.version` 必用本輪 `orig_version` 強覆蓋，`sources[].digest` 必為本輪下載計算值；產物 `.layer` 僅取本輪 `export` 生成者（mtime 晚於本輪構建開始）。
 
 ### ${PREFIX} 安裝目錄約束
 - 所有構建工具的安裝目錄參數必須使用 `${PREFIX}`，禁止硬編碼 `/usr` 或 `/usr/local`
