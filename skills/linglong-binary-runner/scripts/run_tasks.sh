@@ -31,12 +31,12 @@ check_python3
 
 eval "$(parse_json "$TASK_FILE")"
 
-if [[ -z "$PROJECTS_ROOT" || "$PROJECTS_ROOT" == '""' ]]; then
-    log_err "JSON 中缺少 global.projects_root"
+if [[ -z "$PACK_REPO_DIR" || "$PACK_REPO_DIR" == '""' ]]; then
+    log_err "JSON 中缺少 global.pack_repo_dir"
     exit 1
 fi
 
-PROJECTS_ROOT="$(cd "$PROJECTS_ROOT" 2>/dev/null && pwd || echo "$PROJECTS_ROOT")"
+PACK_REPO_DIR="$(cd "$PACK_REPO_DIR" 2>/dev/null && pwd || echo "$PACK_REPO_DIR")"
 OUTPUT_DIR="$(cd "$(dirname "$OUTPUT_DIR")" 2>/dev/null && pwd)/$(basename "$OUTPUT_DIR")" || OUTPUT_DIR="./output"
 SRC_DIR="$(cd "$(dirname "$SRC_DIR")" 2>/dev/null && pwd)/$(basename "$SRC_DIR")" || SRC_DIR="./src"
 
@@ -45,12 +45,12 @@ SRC_DIR=$(json_strip "$SRC_DIR")
 BUILD_TMP_DIR=$(json_strip "$BUILD_TMP_DIR")
 DATA_DIR=$(json_strip "$DATA_DIR")
 
-log_info "項目根目錄: $PROJECTS_ROOT"
+log_info "項目根目錄: $PACK_REPO_DIR"
 log_info "輸出目錄:   $OUTPUT_DIR"
 log_info "資源目錄:   $SRC_DIR"
 
 PROJECTS_REPO=$(json_strip "$PROJECTS_REPO")
-sync_projects_root "$PROJECTS_REPO" "$PROJECTS_ROOT" || exit 1
+sync_projects_root "$PROJECTS_REPO" "$PACK_REPO_DIR" || exit 1
 
 init_directories
 
@@ -106,8 +106,8 @@ run_task() {
     }
 
     local project_dir
-    project_dir=$(find_project_dir "$pkg_name" "$PROJECTS_ROOT") || {
-        log_err "找不到項目目錄: $pkg_name (在 $PROJECTS_ROOT 下)"
+    project_dir=$(find_project_dir "$pkg_name" "$PACK_REPO_DIR") || {
+        log_err "找不到項目目錄: $pkg_name (在 $PACK_REPO_DIR 下)"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (找不到項目目錄)")
         return

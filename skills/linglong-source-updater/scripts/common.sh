@@ -42,7 +42,7 @@ log_err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 # build_lock_dir — 計算指定 pkgName 的工作鎖目錄
 # 参数:
 #   $1  pkg_name    — 包名
-#   $2  locks_root  — 共享項目根目錄（projects_root）
+#   $2  locks_root  — 共享項目根目錄（pack_repo_dir）
 # 輸出: 鎖目錄路徑（stdout）
 build_lock_dir() {
     echo "${2}/.linyaps-locks/.linyaps-build-${1}.lock"
@@ -53,7 +53,7 @@ build_lock_dir() {
 # 进程崩潰残留的陳舊鎖，通過比對 owner 中 PID 是否存活（kill -0）自動回收（兜底）。
 # 参数:
 #   $1  pkg_name    — 包名
-#   $2  locks_root  — 共享項目根目錄（projects_root）
+#   $2  locks_root  — 共享項目根目錄（pack_repo_dir）
 # 返回值: 0=獲鎖成功；1=超時未獲鎖
 acquire_build_lock() {
     local pkg="$1" locks_root="$2"
@@ -88,7 +88,7 @@ acquire_build_lock() {
 # 由調用方（LLM）在構建+導出完成/失敗後顯式調用。
 # 参数:
 #   $1  pkg_name    — 包名
-#   $2  locks_root  — 共享項目根目錄（projects_root）
+#   $2  locks_root  — 共享項目根目錄（pack_repo_dir）
 release_build_lock() {
     local pkg="$1" locks_root="$2"
     local lock_dir
@@ -143,7 +143,7 @@ with open(sys.argv[1]) as f:
     data = json.load(f)
 
 g = data.get('global', {})
-print('PROJECTS_ROOT=' + json.dumps(g.get('projects_root', '')))
+print('PACK_REPO_DIR=' + json.dumps(g.get('pack_repo_dir', '')))
 print('PROJECTS_REPO=' + json.dumps(g.get('projects_repo', '')))
 print('OUTPUT_DIR=' + json.dumps(g.get('output_dir', './output')))
 print('BUILD_TMP_DIR=' + json.dumps(g.get('build_tmp_dir', '')))
@@ -361,10 +361,10 @@ supports_build_tmp_dir() {
     grep -q 'build_tmp_dir' "$script_path" 2>/dev/null
 }
 
-# sync_projects_root — 安全同步 projects_root 打包脚本仓库（fetch + stash -u + rebase + stash pop）
+# sync_projects_root — 安全同步 pack_repo_dir 打包脚本仓库（fetch + stash -u + rebase + stash pop）
 # 参数:
 #   $1  repo_url       — Git 仓库 URL（projects_repo）
-#   $2  root           — 目标目录（projects_root）
+#   $2  root           — 目标目录（pack_repo_dir）
 # 返回:
 #   0  成功 / 无需同步 / 未配置 repo
 #   1  clone 或 rebase / stash 冲突，需阻断流程（本地改动保留在 stash / 工作区，不丢失）
@@ -395,7 +395,7 @@ sync_projects_root() {
     branch=$(git -C "$root" rev-parse --abbrev-ref HEAD)
     behind=$(git -C "$root" rev-list --count "HEAD..origin/$branch" 2>/dev/null || echo 0)
     if [[ "$behind" == "0" ]]; then
-        log_ok "projects_root 已是最新"
+        log_ok "pack_repo_dir 已是最新"
         return 0
     fi
 

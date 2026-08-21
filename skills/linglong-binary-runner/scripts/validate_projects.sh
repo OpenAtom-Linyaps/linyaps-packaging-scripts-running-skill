@@ -12,7 +12,7 @@ source "$SCRIPT_DIR/common.sh"
 
 TASK_FILE=""
 PKG_NAME=""
-PROJECTS_ROOT=""
+PACK_REPO_DIR=""
 OUTPUT_FILE=""
 
 show_help() {
@@ -21,14 +21,14 @@ linyaps binary 項目前置檢測腳本
 
 用法:
   ./validate_projects.sh --task-file=<task.json> [options]
-  ./validate_projects.sh --pkg-name=<names> --projects-root=<path> [options]
+  ./validate_projects.sh --pkg-name=<names> --pack-repo-dir=<path> [options]
 
 必要參數（至少指定一個）:
   --task-file=<file>    任務 JSON 文件路徑
   --pkg-name=<names>    逗號分隔的包名列表
 
 選項:
-  --projects-root=<path>  項目根目錄
+  --pack-repo-dir=<path>  項目根目錄
   --output=<file.json>    結果輸出文件路徑（JSON 格式）
   --help                  顯示此說明
 
@@ -43,7 +43,7 @@ while [[ $# -gt 0 ]]; do
     case "$1" in
         --task-file=*)    TASK_FILE="${1#*=}"; shift ;;
         --pkg-name=*)     PKG_NAME="${1#*=}"; shift ;;
-        --projects-root=*) PROJECTS_ROOT="${1#*=}"; shift ;;
+        --pack-repo-dir=*) PACK_REPO_DIR="${1#*=}"; shift ;;
         --output=*)       OUTPUT_FILE="${1#*=}"; shift ;;
         --help)           show_help ;;
         *)                log_err "未知參數: $1"; show_help ;;
@@ -63,8 +63,8 @@ fi
 check_python3
 
 declare -a ALL_PKG_NAMES=()
-CLI_PROJECTS_ROOT=""
-JSON_PROJECTS_ROOT=""
+CLI_PACK_REPO_DIR=""
+JSON_PACK_REPO_DIR=""
 
 if [[ -n "$TASK_FILE" ]]; then
     PARSE_RESULT=$(python3 -c "
@@ -72,16 +72,16 @@ import json, sys
 with open('${TASK_FILE}') as f:
     data = json.load(f)
 g = data.get('global', {})
-projects_root = g.get('projects_root', '') or ''
+pack_repo_dir = g.get('pack_repo_dir', '') or ''
 tasks = data.get('tasks', [])
-print('JSON_PROJECTS_ROOT=' + json.dumps(projects_root))
+print('JSON_PACK_REPO_DIR=' + json.dumps(pack_repo_dir))
 print('JSON_TASK_COUNT=' + str(len(tasks)))
 for i, t in enumerate(tasks):
     print(f'TASK_{i}_PKGNAME=' + json.dumps(t.get('pkgName', '')))
 " 2>/dev/null) || { log_err "JSON 解析失敗"; exit 1; }
 
     eval "$PARSE_RESULT"
-    JSON_PROJECTS_ROOT=$(json_strip "$JSON_PROJECTS_ROOT")
+    JSON_PACK_REPO_DIR=$(json_strip "$JSON_PACK_REPO_DIR")
 
     for ((i = 0; i < JSON_TASK_COUNT; i++)); do
         pkg_var="TASK_${i}_PKGNAME"
@@ -107,24 +107,24 @@ if [[ $TASK_COUNT -eq 0 ]]; then
     exit 1
 fi
 
-CLI_PROJECTS_ROOT="$PROJECTS_ROOT"
-if [[ -n "$CLI_PROJECTS_ROOT" ]]; then
-    PROJECTS_ROOT="$CLI_PROJECTS_ROOT"
+CLI_PACK_REPO_DIR="$PACK_REPO_DIR"
+if [[ -n "$CLI_PACK_REPO_DIR" ]]; then
+    PACK_REPO_DIR="$CLI_PACK_REPO_DIR"
 else
-    PROJECTS_ROOT="$JSON_PROJECTS_ROOT"
+    PACK_REPO_DIR="$JSON_PACK_REPO_DIR"
 fi
 
-if [[ -z "$PROJECTS_ROOT" ]]; then
-    log_err "未指定 projects-root"
+if [[ -z "$PACK_REPO_DIR" ]]; then
+    log_err "未指定 pack-repo-dir"
     exit 1
 fi
 
-PROJECTS_ROOT="$(cd "$PROJECTS_ROOT" 2>/dev/null && pwd)" || {
-    log_err "項目根目錄不存在: $PROJECTS_ROOT"
+PACK_REPO_DIR="$(cd "$PACK_REPO_DIR" 2>/dev/null && pwd)" || {
+    log_err "項目根目錄不存在: $PACK_REPO_DIR"
     exit 1
 }
 
-log_info "項目根目錄: $PROJECTS_ROOT"
+log_info "項目根目錄: $PACK_REPO_DIR"
 log_info "任務數量:   $TASK_COUNT"
 echo ""
 
@@ -135,7 +135,7 @@ PASS_COUNT=0
 FAIL_COUNT=0
 
 for pkg_name in "${ALL_PKG_NAMES[@]}"; do
-    project_dir=$(find_project_dir "$pkg_name" "$PROJECTS_ROOT") || true
+    project_dir=$(find_project_dir "$pkg_name" "$PACK_REPO_DIR") || true
 
     if [[ -z "$project_dir" ]]; then
         STATUSES+=("NOT_FOUND")
@@ -204,7 +204,7 @@ if [[ -n "$OUTPUT_FILE" ]]; then
 import json
 result = {
     \"validated_at\": \"${timestamp}\",
-    \"projects_root\": \"${PROJECTS_ROOT}\",
+    \"pack_repo_dir\": \"${PACK_REPO_DIR}\",
     \"summary\": {\"total\": ${TASK_COUNT}, \"passed\": ${PASS_COUNT}, \"failed\": ${FAIL_COUNT}},
     \"results\": ${json_results}
 }

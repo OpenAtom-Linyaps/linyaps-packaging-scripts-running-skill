@@ -39,7 +39,7 @@ permission:
 ```json
 {
   "global": {
-    "projects_root": "/path/to/projects",
+    "pack_repo_dir": "/path/to/projects",
     "projects_repo": "",
     "output_dir": "./output/${tag}",
     "data_dir": "./data/${tag}.log",
@@ -60,8 +60,8 @@ permission:
 
 | 欄位 | 用途 | 預設值 |
 |------|------|--------|
-| `projects_root` | 打包腳本項目根目錄 | `./projects` |
-| `projects_repo` | Git 倉庫 URL（非空時每次任務先安全同步 `projects_root`） | 空字串 |
+| `pack_repo_dir` | 打包腳本項目根目錄 | `./projects` |
+| `projects_repo` | Git 倉庫 URL（非空時每次任務先安全同步 `pack_repo_dir`） | 空字串 |
 | `output_dir` | 產出目錄，支援 `${tag}` 佔位符 | `./output/${tag}` |
 | `data_dir` | 數據記錄目錄 | `./data/${tag}.log` |
 | `build_tmp_dir` | 構建緩存目錄 | `./build_cache` |
@@ -148,25 +148,25 @@ result = skill("linyaps-packaging-precheck", {
 
 對 source 類型任務，使用 `validate-linglong-yaml.py` 檢查 `linglong.yaml` 格式。
 
-#### 1.4 同步 `projects_root` 打包腳本倉庫
+#### 1.4 同步 `pack_repo_dir` 打包腳本倉庫
 
-在進入分派執行前，對 `projects_root` 進行安全同步（僅當 `projects_repo` 非空時）：
+在進入分派執行前，對 `pack_repo_dir` 進行安全同步（僅當 `projects_repo` 非空時）：
 
 ```
 source scripts/common.sh
-sync_projects_root "<projects_repo>" "<projects_root>" || exit 1
+sync_projects_root "<projects_repo>" "<pack_repo_dir>" || exit 1
 ```
 
 `sync_projects_root` 流程（`scripts/common.sh`）：
 
-- 目錄不存在 → `git clone <projects_repo> <projects_root>`；clone 失敗 → 返回 1，終止流程。
+- 目錄不存在 → `git clone <projects_repo> <pack_repo_dir>`；clone 失敗 → 返回 1，終止流程。
 - 目錄已存在 → `git fetch origin`，判斷本地是否落後上游：
   - 已最新 → 跳過（零開銷）。
   - 落後 → `git stash push -u`（含未跟踪構建產物，如 `linglong.yaml`/`config/`）→ `git rebase --autostash origin/<branch>` → `git stash pop` 恢復本地改動。
 - rebase 或 stash pop 衝突 → `git rebase --abort`，本地改動保留不丟失，返回 1 **阻斷本次流程**。
 - `git fetch` 因網絡失敗 → 保留現有快取版本繼續（不阻斷）。
 
-> **時效性說明**：`projects_root` 為固定絕對共享目錄（跨 issue 保留），每次任務觸發都執行安全同步以復用構建緩存並保持腳本最新。
+> **時效性說明**：`pack_repo_dir` 為固定絕對共享目錄（跨 issue 保留），每次任務觸發都執行安全同步以復用構建緩存並保持腳本最新。
 
 ### Phase 2: 分派執行
 
@@ -224,7 +224,7 @@ for task_type, task_list in tasks_by_type.items():
 - 多架構版本不一致時，優先使用 x86_64 架構的版本
 - 下載資源時處理重定向 URL
 - 資源已存在時跳過重複下載
-- 操作 `projects_root` 內項目前，必須先同步該打包腳本倉庫；同步時先 `stash -u` 暫存本地一切改動（含未跟踪文件），rebase 後再恢復
+- 操作 `pack_repo_dir` 內項目前，必須先同步該打包腳本倉庫；同步時先 `stash -u` 暫存本地一切改動（含未跟踪文件），rebase 後再恢復
 - `projects_repo` 非空時，分派前必須執行 `sync_projects_root`；rebase / stash 衝突時返回非 0 並**阻斷流程**，禁止強行繼續操作過期快取
 
 ### 構建約束（由 `@MAX_BUILD_ATTEMPTS@` / `@BUILD_TIMEOUT_SEC@` 控制）

@@ -1,6 +1,6 @@
 {
   "global": {
-    "projects_root": "/path/to/projects",
+    "pack_repo_dir": "/path/to/projects",
     "output_dir": "./output",
     "build_tmp_dir": "./build_cache",
     "src_dir": "./src"

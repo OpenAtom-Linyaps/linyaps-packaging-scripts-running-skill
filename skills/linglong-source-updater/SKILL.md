@@ -26,10 +26,10 @@ user-invocable: false
 - 架構映射：`skills/config/arch_mapping.json`
 
 **項目目錄（緩存復用 + 工作鎖）**：
-- 所有 source 項目位於固定的共享目錄 `<projects_root>`（`agent-config.json` 的 `global.projects_root`，固定絕對路徑，跨 issue 保留）下的 `CI_ll_<pkgName>` 等目錄。
+- 所有 source 項目位於固定的共享目錄 `<pack_repo_dir>`（`agent-config.json` 的 `global.pack_repo_dir`，固定絕對路徑，跨 issue 保留）下的 `CI_ll_<pkgName>` 等目錄。
 - **版本升級間不得刪除項目目錄**（僅原地更新 `linglong.yaml`/檔案），以復用 ll-builder 依賴緩存（base/runtime/build_depends 層）。
 - **不要**使用 `build_tmp_dir/<pkgName>` 獨立緩存子目錄；依賴緩存復用完全依賴「固定項目目錄不刪除」。
-- 同一 pkgName 的構建由 `<projects_root>/.linyaps-locks/.linyaps-build-<pkgName>.lock/` 工作鎖互斥（見 Phase C）。
+- 同一 pkgName 的構建由 `<pack_repo_dir>/.linyaps-locks/.linyaps-build-<pkgName>.lock/` 工作鎖互斥（見 Phase C）。
 
 ## 使用前提
 
@@ -145,13 +145,13 @@ LLM 檢閱確認無誤後，執行構建。構建前**必須**獲取 pkgName 工
 
 ```bash
 source skills/linglong-source-updater/scripts/common.sh
-acquire_build_lock <pkgName> <projects_root> || exit 1
+acquire_build_lock <pkgName> <pack_repo_dir> || exit 1
 
 cd <project_dir>
 ll-builder build --skip-output-check
 ll-builder export --layer --no-develop -z zstd
 
-release_build_lock <pkgName> <projects_root>
+release_build_lock <pkgName> <pack_repo_dir>
 ```
 
 > **重要（idle watchdog 規避）**：`ll-builder build` / `export` 可能持續數分鐘，**不得在前台直接阻塞執行**，否則 agent 長時間無新消息會被 idle watchdog 強制停止。必須改用 `monitor-build.sh`：後台啟動構建，然後**以 agent 級循環每 ~5 分鐘調用一次 `status` 輪詢**（每次 `status` 是獨立 bash 調用、產生新消息，重置 watchdog），直到構建結束：
@@ -171,7 +171,7 @@ done
 
 其中 `STATE` 建議為 `${TMPDIR:-/tmp}/ll-build-${pkgName}.state`。`status` 返回 0=已結束、1=仍進行中；構建退出碼從其輸出 `EXIT=<code>` 讀取，不通過退出碼透傳（避免與「進行中」衝突）。build 成功後以同法啟動並輪詢 export。**不可把輪詢合併成一條含 `sleep` 的阻塞腳本**——那又回到前台無輸出狀態。
 
-> **鎖說明**：鎖目錄為 `<projects_root>/.linyaps-locks/.linyaps-build-<pkgName>.lock/`，按 pkgName 互斥；同一 pkgName 同時僅一個構建進程。`acquire_build_lock` 通過原子 `mkdir` 互斥，並自動回收進程崩潰殘留的陳舊鎖（比對 `owner` 中 PID 是否存活）。釋放後才允許下一個同 pkgName 任務。構建期間**不得刪除項目目錄**（僅原地更新文件）以復用依賴緩存。
+> **鎖說明**：鎖目錄為 `<pack_repo_dir>/.linyaps-locks/.linyaps-build-<pkgName>.lock/`，按 pkgName 互斥；同一 pkgName 同時僅一個構建進程。`acquire_build_lock` 通過原子 `mkdir` 互斥，並自動回收進程崩潰殘留的陳舊鎖（比對 `owner` 中 PID 是否存活）。釋放後才允許下一個同 pkgName 任務。構建期間**不得刪除項目目錄**（僅原地更新文件）以復用依賴緩存。
 
 > **Issue-60 防護（产物校勘）**：僅以**本輪** `ll-builder export` 生成、且 `mtime` 晚於本輪構建開始的 `.layer` 作為產物上拋/搬運；目錄中早於本輪構建開始的歷史 `.layer` **不算**本輪成功，不得上報/搬運。禁止以 `find ... -name "*.layer" | head -1` 冒認本輪成功（見 `run_tasks.sh` 的 `-newermt` 處理）。未採集到本輪 `.layer` 即按本輪失敗處理，不得用歷史產物頂替。
 
@@ -180,10 +180,10 @@ done
 ## 約束
 
 - **標準執行路徑**：Phase A（逐個腳本更新）→ Phase B（LLM 檢閱）→ Phase C（構建）。LLM 檢閱必須在 Phase A 之後、Phase C 之前，不可顛倒
-- **構建工作鎖**：Phase C 構建前必須 `acquire_build_lock <pkgName> <projects_root>`，構建+導出完成/失敗後由 LLM **顯式** `release_build_lock <pkgName> <projects_root>` 釋放；同一 pkgName 構建互斥，鎖釋放前**不得**進行下一個同 pkgName 構建
+- **構建工作鎖**：Phase C 構建前必須 `acquire_build_lock <pkgName> <pack_repo_dir>`，構建+導出完成/失敗後由 LLM **顯式** `release_build_lock <pkgName> <pack_repo_dir>` 釋放；同一 pkgName 構建互斥，鎖釋放前**不得**進行下一個同 pkgName 構建
 - **長構建不得前台阻塞**：`ll-builder build`/`export` 等可能超過數分鐘的命令，**必須**透過 `monitor-build.sh start` 後台啟動並以 `status` 輪詢（見 Phase C），嚴禁在單條前台 bash 中直接執行長構建（會觸發 idle watchdog）；每次 `status`/`check-build-active.sh` 輪詢須為獨立 bash 調用
-- **項目目錄持久化**：項目位於固定 `<projects_root>` 下；版本升級間**不得刪除**項目目錄（僅原地更新文件）以復用 ll-builder 依賴緩存；**禁止**使用 `build_tmp_dir/<pkgName>` 獨立緩存子目錄
-- 作為更新階段捷徑，`run_tasks.sh` 也可用於一鍵執行 Phase A 全部子步驟（A-1~A-4），但調用後必須先執行 Phase B（LLM 檢閱），確認無誤後再手動執行 Phase C（構建）。**禁止直接使用 `run_tasks.sh` 的完整流程（含構建），因為這會跳過 LLM 檢閱**。調用時若配置 `global.projects_repo`，`run_tasks.sh` 會先對 `<projects_root>` 執行安全同步（fetch + stash -u + rebase，衝突阻斷）
+- **項目目錄持久化**：項目位於固定 `<pack_repo_dir>` 下；版本升級間**不得刪除**項目目錄（僅原地更新文件）以復用 ll-builder 依賴緩存；**禁止**使用 `build_tmp_dir/<pkgName>` 獨立緩存子目錄
+- 作為更新階段捷徑，`run_tasks.sh` 也可用於一鍵執行 Phase A 全部子步驟（A-1~A-4），但調用後必須先執行 Phase B（LLM 檢閱），確認無誤後再手動執行 Phase C（構建）。**禁止直接使用 `run_tasks.sh` 的完整流程（含構建），因為這會跳過 LLM 檢閱**。調用時若配置 `global.projects_repo`，`run_tasks.sh` 會先對 `<pack_repo_dir>` 執行安全同步（fetch + stash -u + rebase，衝突阻斷）
 - `update-linglong-yaml.py` 是唯一的 `build` 字段修改入口，其自動化操作（SRC_ROOT 插入、prefix 修正、touch/chmod 追加）是**允許的標準行為**
 - **LLM 只讀** `linglong.yaml`——檢閱時不得做任何編輯操作。若需修改，重新執行 Phase A 中的對應腳本
 - `build` 第一個步驟必須進入源碼目錄，使用 `export SRC_ROOT=$(ls -d /project/linglong/sources/<name>/*)` 動態發現後 `cd ${SRC_ROOT}`
