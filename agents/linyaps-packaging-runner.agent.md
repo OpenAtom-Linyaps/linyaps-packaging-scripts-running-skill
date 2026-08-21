@@ -139,6 +139,8 @@ result = skill("linyaps-packaging-precheck", {
 #### 1.3 上游信息查詢（如需要）
 
 若任務缺少 `src_url`/`arch`/`orig_version`，使用 `skills/linyaps-packaging-precheck/scripts/query_upstream.sh` 補全。
+- **提示詞已有的 `src_url`/`orig_version` 為第一候選**：API 返回不得覆蓋已存在字段，僅填充缺失字段。
+- 字段齊全時直接跳過 query；已存在字段被 API 返回不同值時僅記錄 warning，不更新 task（對齊 Issue-61 原則）。
 
 #### 1.3 前置驗證
 
