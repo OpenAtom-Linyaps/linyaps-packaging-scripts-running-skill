@@ -129,26 +129,27 @@ run_task() {
         log_info "該項目不支援 --build_tmp_dir，跳過該參數"
     fi
 
-    local cmd="./pak_linyaps.sh \
-  --linyaps_arch=${arch} \
-  --origin_version=${orig_version} \
-  --src_path=\"${src_path}\" \
-  --output_dir=\"${OUTPUT_DIR}\""
+    local -a cmd=(./pak_linyaps.sh \
+  --linyaps_arch="$arch" \
+  --origin_version="$orig_version" \
+  --src_path="$src_path" \
+  --output_dir="$OUTPUT_DIR")
     if [[ -n "$build_tmp_arg" ]]; then
-        cmd="$cmd \\
-  ${build_tmp_arg}"
+        cmd+=(--build_tmp_dir="$task_build_tmp_dir")
     fi
 
     log_info "執行命令:"
-    echo "$cmd"
+    printf '%s ' "${cmd[@]}"
+    echo ""
     echo ""
 
     local log_file="$OUTPUT_DIR/${pkg_name}.log"
     local start_time
     start_time=$(date +%s)
 
-    if build_with_retry "$pkg_name 打包（binary）" "$MAX_BUILD_ATTEMPTS" "$BUILD_TIMEOUT_SEC" \
-        bash -c "cd '$project_dir' && eval '$cmd'" > "$log_file" 2>&1; then
+    if (
+        cd "$project_dir" && build_with_retry "$pkg_name 打包（binary）" "$MAX_BUILD_ATTEMPTS" "$BUILD_TIMEOUT_SEC" "${cmd[@]}"
+    ) > "$log_file" 2>&1; then
         local end_time
         end_time=$(date +%s)
         local elapsed=$((end_time - start_time))

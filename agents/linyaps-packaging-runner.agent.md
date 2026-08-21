@@ -196,6 +196,7 @@ for task_type, task_list in tasks_by_type.items():
 - 合併各子 SKILL 的執行結果
 - 分類統計：成功數 / 失敗數 / 待初始化數（binary 項目找不到）/ 待源码初始化數（source 項目找不到）
 - 執行 `skills/linyaps-packaging-report/scripts/status_upload.sh` 上報狀態（若為初始化後首次打包，依來源類型使用 `status_upload_initOnly.sh`）
+- **（issue-63 護欄）** 只要打包成功，**必須立即、無條件**執行產物上傳+狀態回報；**禁止**以「已上傳過 / 無需重建 / 緩存命中 / 層已在 S3」為由跳過。**上傳與 webhook 回報未確認完成，不得進入下一任務或結束流程**。上傳/回報失敗時記錄狀態 `upload-failed` 並顯式警告，不得靜默當作成功完成
 - 輸出最終統計
 
 ## 約束
