@@ -156,10 +156,19 @@ user-invocable: false
    ```bash
    ISSUE_ID=$(multica issue list --limit 10 | grep -oP 'issue-\d+' | head -1)
    if [ -n "$ISSUE_ID" ]; then
-     multica issue comment add "$ISSUE_ID" \
-       --content "结果：成功 ${success_count} / 失败 ${fail_count} / 待初始化 ${pending_count} / 待源码初始化 ${src_pending_count}"
+     # 读取 apt 阻塞明细（由 detect-apt-error.sh 写入），追加到评论末尾
+     APT_BLOCKED=""
+     if [ -f "skills/.apt-blocked-state" ]; then
+       APT_BLOCKED="$(grep '^BLOCKED:apt:' "skills/.apt-blocked-state" | tr '\n' ';' | sed 's/;*$//')"
+     fi
+     CONTENT="结果：成功 ${success_count} / 失败 ${fail_count} / 待初始化 ${pending_count} / 待源码初始化 ${src_pending_count}"
+     if [ -n "$APT_BLOCKED" ]; then
+       CONTENT="${CONTENT} ｜ 阻塞明细: ${APT_BLOCKED}"
+     fi
+     multica issue comment add "$ISSUE_ID" --content "$CONTENT"
    fi
    ```
+   > `skills/.apt-blocked-state` 中的记录形如 `BLOCKED:apt:dep-missing,<pkgName>` / `BLOCKED:apt:configure-failed,<pkgName>`，即由 `linglong-source-updater/scripts/detect-apt-error.sh` 检测 build 期 apt 异常后写入，使 issue 评论可看出 apt 错误根因。
 
 ## 指派目标配置
 
