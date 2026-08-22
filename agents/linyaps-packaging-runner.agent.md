@@ -108,6 +108,7 @@ skills/
 |-------|------|------|
 | linglong-binary-runner | `skills/linglong-binary-runner/` | 二進制打包（`pak_linyaps.sh`） |
 | linglong-source-updater | `skills/linglong-source-updater/` | 源碼編譯打包（`ll-builder`） |
+| linyaps-packaging.constraints | `skills/linyaps-packaging.constraints/` | 統一約束唯一權威（Phase 1 一次載入） |
 
 ## 工作流程
 
@@ -168,6 +169,17 @@ sync_projects_root "<projects_repo>" "<pack_repo_dir>" || exit 1
 
 > **時效性說明**：`pack_repo_dir` 為固定絕對共享目錄（跨 issue 保留），每次任務觸發都執行安全同步以復用構建緩存並保持腳本最新。
 
+#### 1.5 載入統一約束 SKILL（僅一次）
+
+在 Phase 1 末尾載入唯一約束來源，後續所有步驟引用約束時指向本 SKILL，不重複展開：
+
+```
+result = skill("linyaps-packaging.constraints", {})
+```
+
+> 統一約束（`${PREFIX}` 安裝目錄、構建重試/超時、項目目錄持久化、路徑解析、修改日誌）以
+> `skills/linyaps-packaging.constraints/SKILL.md` 為唯一權威，正文不再重複明列。
+
 ### Phase 2: 分派執行
 
 根據 `tasks[].type` 將任務分組後分派到對應子 SKILL：
@@ -211,13 +223,7 @@ for task_type, task_list in tasks_by_type.items():
 - **Issue-60 防護（本轮产物）**：構建**只復用 ll-builder 依賴緩存**；`linglong.yaml` 的 `version`/`sources` 與 `.layer` 產物均須為**本輪**，不得把上一輪遺留產物作為本輪結果。`orig_version` 為空/提取失敗 → **阻塞**，不得沿襲歷史 `version`；`package.version` 必用本輪 `orig_version` 強覆蓋，`sources[].digest` 必為本輪下載計算值；產物 `.layer` 僅取本輪 `export` 生成者（mtime 晚於本輪構建開始）。
 
 ### ${PREFIX} 安裝目錄約束
-- 所有構建工具的安裝目錄參數必須使用 `${PREFIX}`，禁止硬編碼 `/usr` 或 `/usr/local`
-- 常見錯誤寫法：
-  - `--prefix=/usr`、`--libdir=/usr/lib`、`--bindir=/usr/bin`、`--includedir=/usr/include`
-  - `-DCMAKE_INSTALL_PREFIX=/usr`、`-DCMAKE_INSTALL_LIBDIR=/usr/lib`、`-DCMAKE_INSTALL_BINDIR=/usr/bin`
-  - `PREFIX=/usr/local`、`QMAKE_INSTALL_PREFIX=/usr`
-- 正確寫法：`-DCMAKE_INSTALL_PREFIX=${PREFIX}`、`--prefix=${PREFIX}`、`PREFIX=${PREFIX}`
-- 輸出校驗階段通過 `validate-linglong-yaml.py` 的 `--allow-sources` 模式檢測
+- 詳見統一約束 SKILL（`skills/linyaps-packaging.constraints/SKILL.md` 第 1 節），此處不再重複列表。所有安裝路徑用 `${PREFIX}`，禁止硬編碼 `/usr` / `/usr/local`。
 
 ### 通用約束
 - 所有腳本調用使用相對於 workspace 根目錄的路徑，不使用 `cd` 切換後執行
@@ -228,30 +234,11 @@ for task_type, task_list in tasks_by_type.items():
 - `projects_repo` 非空時，分派前必須執行 `sync_projects_root`；rebase / stash 衝突時返回非 0 並**阻斷流程**，禁止強行繼續操作過期快取
 
 ### 構建約束（由 `@MAX_BUILD_ATTEMPTS@` / `@BUILD_TIMEOUT_SEC@` 控制）
-- **重試次數限制**：每個構建任務最大執行 `@MAX_BUILD_ATTEMPTS@` 次（含首次），首次失敗後允許重試 1 次，重試間隔 10 秒
-- **首輪等待窗口**：單次構建以 `@BUILD_TIMEOUT_SEC@` 秒（30 分鐘）為首輪等待窗口
-- **構建進度檢測（優先於 timeout）**：窗口到期時**不得僅憑退出碼 124 判超時**。每 10 分鐘調用 `scripts/check-build-active.sh` 判斷是否仍有 `ll-builder` / `fuse-overlayfs` / `erofsfuse` 進程：
-  - 仍有構建進程 → 構建進行中，不判超時、不重試，繼續等待
-  - 無構建進程且命令已退出 → 按退出碼判定成功/失敗
-  - 無構建進程但命令仍未退出 → 判定掛起，才走重試
-- binary：整個 `pak_linyaps.sh` 調用包裹重試 + 首輪窗口
-- source：`ll-builder build` 和 `ll-builder export` 各有獨立窗口；`export` 失敗時重試從 `build` 重新開始
+- 詳見統一約束 SKILL（`skills/linyaps-packaging.constraints/SKILL.md` 第 2 節）：重試不超過
+  `@MAX_BUILD_ATTEMPTS@` 次、首輪窗口 `@BUILD_TIMEOUT_SEC@`、進度檢測優先於 timeout、
+  apt 異常不得繞過。此處不再重複。
 
 ## 修改日志约束
 
-当 LLM 在构建过程中对项目文件（`linglong.yaml`、`pak_linyaps.sh` 等）进行修改并成功构建时，**必须**在最终输出中包含结构化修改日志，格式如下：
-
-```markdown
-### 🔧 修改日志: <pkgName>
-
-**构建状态**: 成功 ✅
-**构建耗时**: <elapsed>s
-
-| # | 文件 | 修改项 | 修改前 | 修改后 | 原因 |
-|---|------|--------|--------|--------|------|
-| 1 | linglong.yaml | buildDepends | libbar-dev | libbaz-dev | 仓库中不存在 |
-```
-
-若无任何修改，输出 `无修改`。
-
-修改日志由脚本捕获后暂存到 `data_dir/<pkgName>.fix-log.md`，并作为构建结果的一部分返回。非 multica 场景下，修改日志仅在最终输出摘要中展示。
+- 詳見統一約束 SKILL（`skills/linyaps-packaging.constraints/SKILL.md` 第 5 節）。
+- 修改日志暫存於 `data_dir/<pkgName>.fix-log.md`；非 multica 場景下僅在最終輸出摘要中展示。

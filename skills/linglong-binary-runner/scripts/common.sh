@@ -372,11 +372,14 @@ find_project_dir() {
     fi
 
     local found
-    found=$(find "$root" -maxdepth 2 -type d -name "*${pkg_name}*" 2>/dev/null | head -1)
-    if [[ -n "$found" && -f "$found/pak_linyaps.sh" ]]; then
-        echo "$found"
-        return
-    fi
+    found=$(
+        find "$root" -maxdepth 2 -type d \( -name "CI_ll_${pkg_name}" -o -name "$pkg_name" \) 2>/dev/null | while read -r d; do
+            local base="${d##*/}"
+            [[ "$base" == "CI_ll_${pkg_name}" || "$base" == "$pkg_name" ]] || continue
+            [[ -f "$d/pak_linyaps.sh" ]] && echo "$d"
+        done
+    )
+    found=$(printf '%s\n' "$found" | sort -u | head -1)
 
     return 1
 }
@@ -398,11 +401,14 @@ find_source_project_dir() {
     fi
 
     local found
-    found=$(find "$root" -maxdepth 2 -type d -name "*${pkg_name}*" 2>/dev/null | head -1)
-    if [[ -n "$found" && -f "$found/linglong.yaml" ]]; then
-        echo "$found"
-        return
-    fi
+    found=$(
+        find "$root" -maxdepth 2 -type d \( -name "CI_ll_${pkg_name}" -o -name "$pkg_name" \) 2>/dev/null | while read -r d; do
+            local base="${d##*/}"
+            [[ "$base" == "CI_ll_${pkg_name}" || "$base" == "$pkg_name" ]] || continue
+            [[ -f "$d/linglong.yaml" ]] && echo "$d"
+        done
+    )
+    found=$(printf '%s\n' "$found" | sort -u | head -1)
 
     return 1
 }

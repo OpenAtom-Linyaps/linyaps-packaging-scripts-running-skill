@@ -60,9 +60,10 @@ user-invocable: false
 
 ## 構建進度檢測（避免長構建被誤判超時）
 
-部分項目構建時間可能超過單次 `timeout` 窗口，導致被誤判為超時。**不要僅憑 `timeout` 的退出碼（124）判定構建失敗。**
+- 進程檢測判斷規則（仍有構建進程不判超時 / 已退出按退出碼 / 未退出判掛起）見統一約束 SKILL
+  （`skills/linyaps-packaging.constraints/SKILL.md` 第 2 節），此處不重複。**不要僅憑 `timeout` 退出碼（124）判定失敗。**
 
-構建執行期間，每 **10 分鐘**調用一次 `scripts/check-build-active.sh` 判斷當前是否有 `ll-builder`、`fuse-overlayfs`、`erofsfuse` 之一在運行：
+構建執行期間，每 **10 分鐘**調用一次 `scripts/check-build-active.sh`：
 
 ```bash
 bash skills/linglong-binary-runner/scripts/check-build-active.sh
@@ -72,8 +73,3 @@ bash skills/linglong-binary-runner/scripts/check-build-active.sh
 bash skills/linglong-binary-runner/scripts/check-build-active.sh -o json
 # {"build_active": true/false, "processes": [...]}
 ```
-
-判定規則：
-- **仍有構建進程** → 構建仍進行中，**不判超時、不重試**，繼續等待構建完成。
-- **無構建進程且命令已退出** → 正常結束或失敗，按退出碼判定。
-- **無構建進程但命令仍未退出** → 構建疑似掛起，才判超時並走重試。

@@ -3,7 +3,7 @@
 update-linglong-yaml.py — 更新 linglong.yaml 补充上游源码信息。
 
 功能：
-  1. 更新 package.version
+  1. 更新 package.version（自动归一化为 a.b.c.d）与顶层 version（保持一致）
   2. 添加 sources 段 (archive/git/file/dsc)
   3. build 段首行插入 cd 进入源码目录（archive/git/dsc 使用 ls -d 动态发现）
   4. 修正 ${prefix} → ${PREFIX}，硬编码 /usr 路径 → ${PREFIX}
@@ -61,6 +61,32 @@ HARDCODED_PREFIX_REPLACEMENTS = [
     # qmake
     (re.compile(r'(?<![-\w])QMAKE_INSTALL_PREFIX=/usr(?!\w)'), 'QMAKE_INSTALL_PREFIX=${PREFIX}'),
 ]
+
+
+VERSION_SEGMENT_RE = re.compile(r'\d+')
+VERSION_TAIL_RE = re.compile(r'^[vV]?\d+(?:\.\d+)*')
+
+
+def normalize_version(version: str) -> str:
+    """将上游版本号归一化为 a.b.c.d 四位纯数字格式（与 validate-linglong-yaml.py 契约对齐）。
+
+    规则：
+      1. 仅保留前 4 个数字段（忽略非数字尾部，如 -1 / _alpha / rc）。
+      2. 不足 4 段时补 .0 到 4 段。
+      3. 每段去除前导 0（保留单个 0），避免 3.0.23.02 这类被校验拒绝。
+
+    例：2.0 -> 2.0.0.0；3.0.23 -> 3.0.23.0；2.04-alpha -> 2.4.0.0；5.7.21.0-1 -> 5.7.21.0
+    """
+    if not version:
+        return ""
+    head = VERSION_TAIL_RE.match(version.strip())
+    if not head:
+        return ""
+    segments = VERSION_SEGMENT_RE.findall(head.group(0))
+    normalized = [str(int(seg)) for seg in segments[:4]]
+    while len(normalized) < 4:
+        normalized.append("0")
+    return ".".join(normalized)
 
 
 def fix_prefix_variables(build_text: str) -> str:
@@ -125,12 +151,22 @@ def update_linglong_yaml(
     with open(yaml_path, "r", encoding="utf-8") as f:
         data = yaml.load(f)
 
-    # --- update package.version ---
+    # --- update package.version (+ top-level version) ---
     if new_version:
         if "package" not in data or not isinstance(data["package"], dict):
             print("ERROR: 'package' section not found or not a mapping", file=sys.stderr)
             sys.exit(1)
-        data["package"]["version"] = new_version
+        normalized = normalize_version(new_version)
+        if not normalized:
+            print(f"ERROR: 无法从版本号 '{new_version}' 提取数字段", file=sys.stderr)
+            sys.exit(1)
+        data["package"]["version"] = normalized
+        # 顶层 version 与 package.version 保持一致，避免 validate 的单个数字校验拒绝
+        if "version" not in data:
+            keys = list(data.keys())
+            data.insert(0, "version", normalized)
+        else:
+            data["version"] = normalized
 
     # --- insert sources ---
     source_entry = build_source_entry(kind, url, digest, name, commit)
@@ -171,7 +207,7 @@ def update_linglong_yaml(
 def main():
     parser = argparse.ArgumentParser(description="Update linglong.yaml with upstream source info")
     parser.add_argument("--path", required=True, help="Project directory containing linglong.yaml")
-    parser.add_argument("--version", default="", help="New package.version (e.g. 2.0.0.0)")
+    parser.add_argument("--version", default="", help="Upstream version; auto-normalized to a.b.c.d (e.g. 2.0 -> 2.0.0.0)")
     parser.add_argument("--kind", required=True, choices=["archive", "git", "file", "dsc"],
                         help="Source type")
     parser.add_argument("--url", required=True, help="Upstream source URL")

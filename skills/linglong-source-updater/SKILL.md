@@ -34,12 +34,8 @@ user-invocable: false
 ## 使用前提
 
 - 目標項目目錄下存在 `linglong.yaml`，且格式正確、無 sources 段
-- `build` 字段中必須包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
-- `build` 段中所有安裝目錄參數出現 `/usr` 或 `/usr/local` 絕對路徑均為錯誤：
-  - `--prefix=/usr` / `--libdir=/usr/lib` / `--bindir=/usr/bin`
-  - `-DCMAKE_INSTALL_PREFIX=/usr` / `-DCMAKE_INSTALL_LIBDIR=/usr/lib`
-  - `QMAKE_INSTALL_PREFIX=/usr`
-  - 以上均須以 `${PREFIX}` 替代（系統命令如 `apt-get`、`dpkg` 中的 `/usr` 除外）
+- `build` 段安裝路徑 / `touch` / `chmod` / `${PREFIX}` 等標準結構見統一約束 SKILL
+  （`skill("linyaps-packaging.constraints")`），此處不重複列表
 
 ## 輸入
 
@@ -187,8 +183,7 @@ done
 - `update-linglong-yaml.py` 是唯一的 `build` 字段修改入口，其自動化操作（SRC_ROOT 插入、prefix 修正、touch/chmod 追加）是**允許的標準行為**
 - **LLM 只讀** `linglong.yaml`——檢閱時不得做任何編輯操作。若需修改，重新執行 Phase A 中的對應腳本
 - `build` 第一個步驟必須進入源碼目錄，使用 `export SRC_ROOT=$(ls -d /project/linglong/sources/<name>/*)` 動態發現後 `cd ${SRC_ROOT}`
-- `build` 段必須包含 `touch ${PREFIX}/.linyaps_genius` 和 `chmod -R 755 ${PREFIX}`
-- `${PREFIX}` 安裝目錄約束：所有安裝路徑使用 `${PREFIX}` 而非硬編碼的 `/usr` 或 `/usr/local`
+- `build` 段安裝路徑 / `touch` / `chmod` / `${PREFIX}` 約束見統一約束 SKILL（`skill("linyaps-packaging.constraints")`），此處不重複
 - `sources` 段的 `digest` 字段不得包含 `sha256:` 等加密方法前綴
 - `package.id` 若任務 JSON 中有 `pkgName` 字段，應優先採用作為 id 生成依據；不強制要求反向域名格式
 - `package.version` 必須為四位數字 `a.b.c.d`，各段均不能以 `0` 開頭
@@ -196,9 +191,10 @@ done
 
 ## 構建進度檢測（避免長構建被誤判超時 / idle watchdog）
 
-部分項目構建時間可能超過單次 `timeout` 窗口，導致被誤判為超時。**不要僅憑 `timeout` 的退出碼（124）判定構建失敗。**
-
-`ll-builder build` / `ll-builder export` 執行期間，用 `monitor-build.sh` 後台啟動並以 `status` 輪詢（見 Phase C）。底層亦可每 ~5 分鐘調用一次 `scripts/check-build-active.sh` 判斷當前是否有 `ll-builder`、`fuse-overlayfs`、`erofsfuse` 之一在運行：
+- 進程檢測判斷規則（仍有構建進程不判超時 / 已退出按退出碼 / 未退出判掛起）見統一約束 SKILL
+  （`skills/linyaps-packaging.constraints/SKILL.md` 第 2 節），此處不重複。
+- 本 SKILL 使用 `monitor-build.sh` 後台啟動並以 `status`/`wait` 輪詢以規避 idle watchdog；
+  底層亦可每 ~5 分鐘調用 `scripts/check-build-active.sh`：
 
 ```bash
 bash skills/linglong-source-updater/scripts/check-build-active.sh
@@ -209,9 +205,4 @@ bash skills/linglong-source-updater/scripts/check-build-active.sh -o json
 # {"build_active": true/false, "processes": [...]}
 ```
 
-判定規則：
-- **仍有構建進程**（尤其 `ll-builder` 本體）→ 構建仍進行中，**不判超時、不重試**，繼續等待構建完成。
-- **無構建進程且命令已退出** → 正常結束或失敗，按退出碼判定。
-- **無構建進程但命令仍未退出** → 構建疑似掛起，才判超時並走重試。
-
-`monitor-build.sh status` 已封裝上述進程檢測：返回 1（進行中）即不判超時；返回 0（已結束）後從輸出解析 `EXIT=<code>` 判定成敗（0=成功 / 124=超時 / 其他=失敗）。
+`monitor-build.sh status` 返回 1（進行中）即不判超時；返回 0（已結束）後從輸出解析 `EXIT=<code>` 判定成敗（0=成功 / 124=超時 / 其他=失敗）。
