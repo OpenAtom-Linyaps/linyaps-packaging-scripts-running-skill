@@ -73,10 +73,14 @@ check_python3() {
 parse_json() {
     python3 -c "
 import json, sys
-with open(sys.argv[1]) as f:
+task_path, config_path = sys.argv[1:3]
+with open(config_path) as f:
+    config = json.load(f)
+with open(task_path) as f:
     data = json.load(f)
 
-g = data.get('global', {})
+g = dict(config.get('global', {}))
+g.update(data.get('global', {}))
 print('PACK_REPO_DIR=' + json.dumps(g.get('pack_repo_dir', '')))
 print('PROJECTS_REPO=' + json.dumps(g.get('projects_repo', '')))
 print('OUTPUT_DIR=' + json.dumps(g.get('output_dir', './output')))
@@ -95,7 +99,7 @@ for i, t in enumerate(tasks):
     print(f'TASK_{i}_KIND=' + json.dumps(t.get('kind', '')))
     print(f'TASK_{i}_NAME=' + json.dumps(t.get('name', '')))
     print(f'TASK_{i}_COMMIT=' + json.dumps(t.get('commit', '')))
-" "$1"
+" "$1" "$2"
 }
 
 json_strip() {

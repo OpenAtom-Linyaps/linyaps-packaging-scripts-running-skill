@@ -33,7 +33,7 @@ source "$SCRIPT_DIR/common.sh"
 
 check_python3
 
-eval "$(parse_json "$TASK_FILE")"
+eval "$(parse_json "$TASK_FILE" "$CONFIG_FILE")"
 
 if [[ -z "$PACK_REPO_DIR" || "$PACK_REPO_DIR" == '""' ]]; then
     log_err "JSON 中缺少 global.pack_repo_dir"
