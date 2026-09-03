@@ -112,8 +112,9 @@ init_directories() {
     mkdir -p "$SRC_DIR" "$OUTPUT_DIR"
 
     if [[ -n "$BUILD_TMP_DIR" ]]; then
-        BUILD_TMP_DIR="$(cd "$BUILD_TMP_DIR" 2>/dev/null && pwd || mkdir -p "$BUILD_TMP_DIR" && cd "$BUILD_TMP_DIR" && pwd)"
-        log_info "緩存目錄:   $BUILD_TMP_DIR"
+        mkdir -p "$BUILD_TMP_DIR"
+        BUILD_TMP_DIR="$(cd "$BUILD_TMP_DIR" && pwd)"
+        log_info "緩存根目錄: $BUILD_TMP_DIR"
     else
         BUILD_TMP_DIR="$(mktemp -d)"
         log_info "緩存目錄:   $BUILD_TMP_DIR (自動生成)"

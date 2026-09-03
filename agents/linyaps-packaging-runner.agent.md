@@ -19,14 +19,6 @@ permission:
 
 # linyaps 打包任務執行器（Agent）
 
-> **`@MAX_BUILD_ATTEMPTS@` 和 `@BUILD_TIMEOUT_SEC@` 变量声明（单点修改）**
-> 构建任务的重试次数和首轮等待窗口由此两个变量全局控制：
-> - `@MAX_BUILD_ATTEMPTS@` = `2` — 每个构建任务最大构建次数（含首次和一次失败重试）
-> - `@BUILD_TIMEOUT_SEC@` = `1800` — 单次构建首轮等待窗口秒数，即 30 分钟
->
-> **替换规则**：在 bash 脚本中使用 `timeout @BUILD_TIMEOUT_SEC@` 包裹构建命令作为首轮窗口，
-> 窗口到期后**必须**调用 `scripts/check-build-active.sh` 判断构建是否仍在进行，
-> 仍有构建进程则继续等待（不判超时），失败时自动重试（不超过 `@MAX_BUILD_ATTEMPTS@` 次），重试间隔 10 秒。
 
 根據用戶提供的 JSON 或 CSV 任務文件，按 `tasks[].type` 分派到對應的子 SKILL 執行打包。
 
@@ -41,8 +33,8 @@ permission:
   "global": {
     "pack_repo_dir": "/path/to/projects",
     "projects_repo": "",
-    "output_dir": "./output/${tag}",
-    "data_dir": "./data/${tag}.log",
+    "output_dir": "./output",
+    "data_dir": "./data",
     "build_tmp_dir": "./build_cache",
     "src_dir": "./src"
   },
@@ -62,12 +54,11 @@ permission:
 |------|------|--------|
 | `pack_repo_dir` | 打包腳本項目根目錄 | `./projects` |
 | `projects_repo` | Git 倉庫 URL（非空時每次任務先安全同步 `pack_repo_dir`） | 空字串 |
-| `output_dir` | 產出目錄，支援 `${tag}` 佔位符 | `./output/${tag}` |
-| `data_dir` | 數據記錄目錄 | `./data/${tag}.log` |
-| `build_tmp_dir` | 構建緩存目錄 | `./build_cache` |
-| `src_dir` | 資源下載目錄 | `./src` |
+| `output_dir` | 產出目錄，由配置直接指定 | `./output` |
+| `data_dir` | 數據記錄目錄，由配置直接指定 | `./data` |
+| `build_tmp_dir` | 構建臨時目錄根目錄；每個 binary 任務建立隨機子目錄 | `./build_cache` |
+| `src_dir` | 資源下載目錄，由配置直接指定 | `./src` |
 
-> **`${tag}` 路徑即時解析規則**：載入配置後立即以 `date +"%Y-%m-%d"` 替換 `${tag}` 為完整路徑，後續所有步驟使用已解析的完整路徑。
 
 ### 載入順序（優先級從高到低）
 
@@ -117,7 +108,7 @@ skills/
 #### 1.1 載入配置
 
 1. **讀取 `agent-config.json`**：解析 `global` 配置和 `version_extract_examples`
-2. **`${tag}` 路徑解析**：`date +"%Y-%m-%d"` 替換所有含 `${tag}` 的路徑
+2. **使用配置中的完整路徑**，不進行日期或模板解析
 3. **載入任務文件**：
    - CSV 格式：先執行 `bash skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.sh` 轉換為 JSON
    - JSON 格式：直接解析

@@ -117,8 +117,13 @@ run_task() {
     local pak_script="$project_dir/pak_linyaps.sh"
     chmod +x "$pak_script"
 
-    local task_build_tmp_dir="${BUILD_TMP_DIR}/${pkg_name}"
-    mkdir -p "$task_build_tmp_dir"
+    local task_build_tmp_dir
+    if ! task_build_tmp_dir=$(mktemp -d -p "$BUILD_TMP_DIR"); then
+        log_err "無法建立任務緩存目錄（根目錄: $BUILD_TMP_DIR）"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        RESULTS+=("$pkg_name: 失敗 (無法建立任務緩存目錄)")
+        return
+    fi
     log_info "任務緩存目錄: $task_build_tmp_dir"
 
     local build_tmp_arg=""

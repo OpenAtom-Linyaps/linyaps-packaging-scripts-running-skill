@@ -56,8 +56,7 @@ user-invocable: false
 ## 4. 路径解析与脚本调用约束
 
 - 所有脚本调用使用相对于 workspace 根目录的路径，不使用 `cd` 切换后执行。
-- `${tag}` 路径在 Phase 1 以 `date +"%Y-%m-%d"` **仅解析一次**并记录完整路径；
-  后续不得再将 `${tag}` 原样传给 bash/mkdir/curl。
+配置中的路徑直接使用，不由流程推導或替換模板；binary 任務目錄由 runner 在配置根目錄下隨機建立。
 - 操作 `pack_repo_dir` 内项目前，必须先 `sync_projects_root` 安全同步（fetch + `stash -u` +
   rebase + `stash pop`）；rebase/stash 冲突返回非 0 并**阻断流程**。
 - 多架构版本不一致时，优先使用 x86_64 架构版本。
