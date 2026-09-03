@@ -47,19 +47,19 @@ is_uuid() {
     [[ "${1:-}" =~ ^${UUID_RE}$ ]]
 }
 
-# get_issue_id — 当前 workspace 最新的 issue UUID id
-# 返回码: 0=成功 1=无 issue 2=CLI 异常 3=无效 uuid；成功时输出 uuid
+# get_issue_id — immutable issue UUID supplied by the task handoff
+# Return codes: 0=success, 1=missing, 3=invalid UUID.
 get_issue_id() {
-    local out id
-    out=$(multica issue list --output json --limit 1 2>/dev/null) || return 2
-    [[ -z "$out" ]] && return 1
-    id=$(python3 -c "import json,sys
-d=json.load(sys.stdin)
-print(d['issues'][0]['id'] if d.get('issues') else '')" <<<"$out") 2>/dev/null || return 2
-    [[ -z "$id" ]] && return 1
-    if ! is_uuid "$id"; then log_warn "[multica] invalid_uuid: $id"; return 3; fi
-    echo "$id"
-    return 0
+    local id="${MULTICA_ISSUE_TASK_ID:-}"
+    if [[ -z "$id" ]]; then
+        log_err "blocked: issue_id_required (MULTICA_ISSUE_TASK_ID is unset)"
+        return 1
+    fi
+    if ! is_uuid "$id"; then
+        log_err "blocked: invalid_issue_uuid: $id"
+        return 3
+    fi
+    printf '%s\n' "$id"
 }
 
 # get_agent_uuid_by_name <CLI 真实 agent name> — 按 CLI 真实 name 提取 agent uuid

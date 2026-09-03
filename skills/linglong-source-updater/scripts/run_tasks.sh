@@ -295,16 +295,18 @@ run_source_task() {
     local elapsed=$((end_time - start_time))
     log_ok "$pkg_name 打包成功 (耗時 ${elapsed}s)"
 
-    # 檢查並投遞修改日志
+    # Fix-log comments require the immutable task issue context.
     local fix_log_path="${DATA_DIR}/${pkg_name}.fix-log.md"
     if [[ -f "$fix_log_path" ]]; then
+        if [[ -z "${MULTICA_ISSUE_TASK_ID:-}" ]]; then
+            log_err "blocked: issue_id_required; refusing unbound fix-log comment"
+            FAIL_COUNT=$((FAIL_COUNT + 1)); RESULTS+=("$pkg_name: 阻塞 (缺少任务 issue ID)"); return
+        fi
         log_info "檢測到修改日志，發布到 issue..."
-        bash "$REPO_ROOT/skills/linyaps-multica-packer-dispatch/scripts/dispatch.sh" \
-            post_fix_log \
-            --pkgName="$pkg_name" \
-            --fix-log-path="$fix_log_path" \
-            ${DATA_DIR:+--data-dir="$DATA_DIR"} \
-            2>/dev/null || log_warn "發布修改日志失敗（不阻斷）"
+        bash "$REPO_ROOT/skills/linyaps-multica-packer-dispatch/scripts/dispatch.sh" post_fix_log --pkgName="$pkg_name" --fix-log-path="$fix_log_path" ${DATA_DIR:+--data-dir="$DATA_DIR"} || {
+            log_err "blocked: fix-log publication failed"
+            FAIL_COUNT=$((FAIL_COUNT + 1)); RESULTS+=("$pkg_name: 阻塞 (修改日志未绑定发布)"); return
+        }
     fi
 
     SUCCESS_COUNT=$((SUCCESS_COUNT + 1))

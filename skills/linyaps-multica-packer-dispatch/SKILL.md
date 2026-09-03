@@ -22,7 +22,7 @@ user-invocable: false
 - 配置来源：`for-multica/agent-config.json` 的 `assignment` 区段
 - 本 skill 脚本：`skills/linyaps-multica-packer-dispatch/scripts/`
 
-**配置接收**：`agent_config_path` 由调用方通过 `skill()` 传入，本 skill 将其映射为 `--config=<path>`（或 `--agent-config-path=<path>`）参数传递给 `dispatch.sh` 脚本。
+**配置接收**：`agent_config_path` 由调用方通过 `skill()` 传入。本 skill 同时必须继承已由 agent handoff 设置并导出的 `MULTICA_ISSUE_TASK_ID`（严格 UUID）；缺失、无效或与当前 issue 不一致均返回 `blocked`，不发送任何 comment/assign/status API 请求。
 
 ## 四种 Action 接口
 
@@ -50,14 +50,10 @@ user-invocable: false
 
 **消费者**：packer agent 中步骤 7.6（`status_upload.sh` vs `status_upload_initOnly.sh` 选择）
 
-**执行逻辑**：
-1. 通过 `multica issue list --output json --limit 1` 取当前 issue 的精确 `id`（UUID）
-2. 若获取到 ISSUE_ID（UUID），通过 `multica issue comment list "<ISSUE_ID>" --output json` 获取评论
-3. 优先级匹配：`linyaps-init` >> `linyaps-src-init`（binary 场景比例更高）
-   - 评论包含 `linyaps-init` → `IS_INIT_ASSIGNED=true`
-   - 否则包含 `linyaps-src-init` → `SRC_INIT_ASSIGNED=true`
-   - 均不含 → 两者 false
-4. multica CLI 不可用或查询失败 → 两标记均为 false，**不阻断流程**
+1. 从 `MULTICA_ISSUE_TASK_ID` 读取并严格校验当前 issue UUID；禁止使用 `multica issue list --limit 1` 或评论内容推断身份。
+2. 通过 `multica issue comment list "<ISSUE_ID>" --output json` 获取评论并匹配初始化来源。
+3. 优先级匹配：`linyaps-init` >> `linyaps-src-init`。
+4. CLI 查询失败、身份缺失或任务上下文不一致 → `blocked`，不继续后续动作。
 
 ### Action 2: `dispatch_project_not_found`
 

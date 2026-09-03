@@ -74,6 +74,19 @@ output_json() {
   fi
 }
 
+require_task_issue() {
+  local issue_id
+  if ! issue_id=$(get_issue_id); then
+    output_json '{"blocked":true,"reason":"issue_id_required"}'
+    return 1
+  fi
+  export MULTICA_ISSUE_TASK_ID="$issue_id"
+}
+
+if [[ "$ACTION" == "detect_init_source" || "$ACTION" == "dispatch_project_not_found" || "$ACTION" == "update_issue_status" || "$ACTION" == "post_fix_log" ]]; then
+  require_task_issue || exit 2
+fi
+
 # ---- detect_init_source ----
 if [[ "$ACTION" == "detect_init_source" ]]; then
   exec bash "$SCRIPT_DIR/detect_init_source.sh" \
