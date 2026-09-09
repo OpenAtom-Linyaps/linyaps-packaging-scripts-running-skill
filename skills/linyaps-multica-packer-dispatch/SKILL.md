@@ -232,3 +232,9 @@ LLM 修复项目问题后，将修改日志发布为 issue comment。
    - issue / agent / workspace 一律以 multica `--output json` 返回的 `id`（UUID）为唯一标识，禁止 `grep issue-\d+` / `comment-\d+` / `--to <slug>` / `@name` 模糊匹配
    - 指派必须用 `--to-id <agent-uuid>`；@mention 必须用 `[@name](mention://agent/<uuid>)`
    - **agent 一律「按 CLI 真实 name」提取 uuid**（`multica agent list --output json` 的 `name → id`）；config 的 `assignment.agents[].id`（slug/中文）**不**等于 CLI name，slug→CLI name 映射由 Agent（LLM）运行时决策并以 `--agent-name=<CLI name>` 显式传入，**脚本不硬编码映射**
+
+## 输出与日志边界
+
+- `dispatch_project_not_found` 只返回匹配能力、CLI agent name/UUID、agent 状态和 `assigned/reason`；不得输出完整 agent 列表、配置正文或 API 原始响应。
+- `update_issue_status` 只返回 `issue_status` 与 `comment_id`；`post_fix_log` 只读取传入的 `FIX_LOG_PATH` 并返回 `posted`、`pkgName` 和时间戳。
+- CLI 原始响应必须留在脚本内部解析或重定向；构建日志不得通过本 skill 发布，fix-log 之外的文件不得读取。

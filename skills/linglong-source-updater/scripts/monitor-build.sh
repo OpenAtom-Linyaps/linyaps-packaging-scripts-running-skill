@@ -9,18 +9,13 @@
 #
 # 三种模式：
 #   start  <state_file> [--timeout SEC] [--log FILE] [--heartbeat SEC] -- <cmd...>
-#       后台启动 <cmd>（带 timeout），日志重定向到 --log，立即返回（不阻塞）。
-#       状态写入 <state_file>；构建结束由子 shell 把 "EXIT=<code>" 追加到状态文件。
+#       状态写入 <state_file>；构建结束由子 shell 把 `EXIT=<code>` 追加到状态文件。
 #   status <state_file>
-#       <1s 返回：运行中打印 running(elapsed,PID) 并 exit 1；已结束打印 finished
-#       EXIT=<code> 并 exit 0（构建码见输出，可从输出解析，不通过退出码透传）。
+#       <1s 返回：仅打印状态、elapsed、PID、EXIT 和日志路径；运行中 exit 1，已结束 exit 0。
 #   wait   <state_file> [--timeout SEC]
-#       阻塞直到构建结束（供独立脚本 / run_tasks.sh 使用），返回构建退出码。
+#       阻塞直到构建结束，返回构建退出码；只输出状态字段和日志路径，不输出构建正文。
 #
-# 示例（LLM 轮询，每次 status 为独立 bash 调用、产生新消息重置 idle watchdog）：
-#   bash monitor-build.sh start /tmp/ll.state --timeout 1800 --log build.log \
-#       -- ll-builder build --skip-output-check
-#   while ! bash monitor-build.sh status /tmp/ll.state; do sleep 300; done
+# 日志正文始终写入 `--log` 指定文件。调用方必须只在异常诊断或用户明确要求时读取该文件的有界尾部/关键区域。
 
 set -euo pipefail
 
@@ -109,48 +104,38 @@ cmd_start() {
     echo "LOG=$log"
   } > "$state"
 
-  echo "monitor-build: 已后台启动 (PID=$pid, timeout=${timeout}s, log=$log)"
-  echo "monitor-build: 状态文件 $state"
-  echo "monitor-build: 轮询方式: while ! bash $0 status '$state'; do sleep 300; done"
+  echo "status=started pid=$pid timeout=${timeout}s log_path=$log state_file=$state"
 }
 
 # --- status ---
 cmd_status() {
   local state="$1"
-
   if [[ ! -f "$state" ]]; then
-    echo "monitor-build: 状态文件不存在: $state (可能未启动)"
+    echo "status=missing state_file=$state"
     exit 3
   fi
-
-  local pid start_epoch timeout
+  local pid start_epoch timeout log_path
   pid=$(awk -F= '/^PID=/{print $2}' "$state" | head -1)
   start_epoch=$(awk -F= '/^START=/{print $2}' "$state" | head -1)
   timeout=$(awk -F= '/^TIMEOUT=/{print $2}' "$state" | head -1)
+  log_path=$(awk -F= '/^LOG=/{print $2}' "$state" | head -1)
   timeout="${timeout:-$DEFAULT_TIMEOUT}"
-
-  local now elapsed
-  now=$(date +%s)
-  elapsed=$((now - start_epoch))
-
-  # 返回语义（done-check）：exit 0 = 已结束（构建码见输出），exit 1 = 仍进行中
+  local elapsed=$(( $(date +%s) - start_epoch ))
   if grep -q '^EXIT=' "$state"; then
     local exit_code
     exit_code=$(grep '^EXIT=' "$state" | tail -1 | cut -d= -f2)
-    echo "monitor-build: 构建已结束 EXIT=$exit_code (elapsed ${elapsed}s, PID=$pid)"
+    echo "status=finished exit_code=$exit_code elapsed=${elapsed}s pid=$pid log_path=$log_path"
     exit 0
   fi
-
   if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-    echo "monitor-build: 构建进行中 (elapsed ${elapsed}s, timeout ${timeout}s, PID=$pid)"
+    echo "status=running elapsed=${elapsed}s timeout=${timeout}s pid=$pid log_path=$log_path"
     if (( elapsed >= timeout )); then
-      echo "monitor-build: 已达 timeout ${timeout}s，构建将被终止"
+      echo "status=timeout timeout=${timeout}s pid=$pid log_path=$log_path"
       kill "$pid" 2>/dev/null || true
     fi
     exit 1
   fi
-
-  echo "monitor-build: 无存活进程且无 EXIT 记录 (stale state, PID=$pid)"
+  echo "status=stale_state pid=$pid state_file=$state"
   exit 1
 }
 
@@ -169,13 +154,14 @@ cmd_wait() {
   local interval=5
   while (( waited < timeout )); do
     if [[ ! -f "$state" ]]; then
-      echo "monitor-build: 状态文件不存在: $state" >&2
+      echo "status=missing state_file=$state" >&2
       return 3
     fi
     if grep -q '^EXIT=' "$state"; then
-      local exit_code
+      local exit_code log_path
       exit_code=$(grep '^EXIT=' "$state" | tail -1 | cut -d= -f2)
-      echo "monitor-build: 构建已结束 EXIT=$exit_code"
+      log_path=$(awk -F= '/^LOG=/{print $2}' "$state" | head -1)
+      echo "status=finished exit_code=$exit_code log_path=$log_path"
       return "$exit_code"
     fi
     sleep "$interval"

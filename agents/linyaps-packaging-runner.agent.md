@@ -194,13 +194,15 @@ for task_type, task_list in tasks_by_type.items():
 - binary：`bash skills/linglong-binary-runner/scripts/run_tasks.sh <subtask.json>`
 - source：`bash skills/linglong-source-updater/scripts/run_tasks.sh <subtask.json>`
 
-### Phase 3: 結果彙總
+### Phase 3: 结果彙總
 
-- 合併各子 SKILL 的執行結果
-- 分類統計：成功數 / 失敗數 / 待初始化數（binary 項目找不到）/ 待源码初始化數（source 項目找不到）
-- 執行 `skills/linyaps-packaging-report/scripts/status_upload.sh` 上報狀態（若為初始化後首次打包，依來源類型使用 `status_upload_initOnly.sh`）
-- **（issue-63 護欄）** 只要打包成功，**必須立即、無條件**執行產物上傳+狀態回報；**禁止**以「已上傳過 / 無需重建 / 緩存命中 / 層已在 S3」為由跳過。**上傳與 webhook 回報未確認完成，不得進入下一任務或結束流程**。上傳/回報失敗時記錄狀態 `upload-failed` 並顯式警告，不得靜默當作成功完成
-- 輸出最終統計
+- 合併各子 SKILL 的短结构化结果；每项仅保留 `pkgName`、`type`、`status`、`elapsed`、`attempts`、`artifact`、`error_summary`、`log_path`。
+- 完整构建日志必须留在本地日志路径；入口 agent 禁止读取或粘贴完整日志、完整 agent 文档、完整目录树或未限定范围的工具输出。异常摘要由子 skill 生成；入口只按 `log_path` 引用。
+- 分类统计：成功数 / 失败数 / 待初始化数（binary 项目找不到）/ 待源码初始化数（source 项目找不到）。
+- 执行 `skills/linyaps-packaging-report/scripts/status_upload.sh` 上报状态（若为初始化后首次打包，依来源类型使用 `status_upload_initOnly.sh`）。
+- **（issue-63 護欄）** 只要打包成功，**必須立即、無條件**執行產物上傳+狀態回報；上傳/回報未確認完成，不得进入下一任务或结束流程。
+- 输出最终短统计，不输出原始 API 响应或目录扫描结果。
+
 
 ## 約束
 
