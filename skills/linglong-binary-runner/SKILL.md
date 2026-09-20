@@ -24,7 +24,7 @@ user-invocable: false
 
 ## 类型约束
 
-- 所有打包操作必须通过 `pak_linyaps.sh`；禁止直接调用 `ll-builder`、改写 `linglong.yaml` 或修改 `pak_linyaps.sh`。
+- 所有打包操作必须通过 pak_linyaps.sh（由 run_tasks.sh 驱动）；入口与门禁规则见 linyaps-packaging.constraints §6。
 - 公共路径、同步、缓存、重试/超时和日志边界只引用 `skills/linyaps-packaging.constraints/SKILL.md`。
 
 构建期间每 10 分钟独立调用 `check-build-active.sh`；仍有构建进程时不得判定超时，不得仅凭退出码 124 判失败。

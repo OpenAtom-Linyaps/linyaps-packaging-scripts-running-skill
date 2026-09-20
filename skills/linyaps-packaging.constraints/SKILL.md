@@ -80,6 +80,12 @@ user-invocable: false
 
 若无修改，输出 `无修改`。修改日志由脚本捕获暂存到 `<data_dir>/<pkgName>.fix-log.md`。
 
+## 6. binary 打包入口约束
+
+- type=binary 任务的唯一执行入口是 `skills/linglong-binary-runner/scripts/run_tasks.sh`；成功意味着 `pak_linyaps.sh` 真实执行且产出了 `$OUTPUT_DIR/<pkgName>.exec-proof.json`。
+- agent 直接调用 `ll-builder`、改写项目 `linglong.yaml`、手工执行 `pak_linyaps.sh` 的分步命令，对 type=binary 均属违规；`status_upload.sh` 门禁将此类结果阻断为 `blocked:pak_linyaps_bypass`（跳过 S3 上传）并向 webhook 上报 `pak_linyaps_bypass=1`。
+- source 任务不受本节约束（其直接驱动 `ll-builder` 属 `linglong-source-updater` Phase C 设计），但成功上报须带 `TASK_TYPE=source` 调用 `status_upload.sh`。
+
 ## 补充说明
 
 - 子 SKILL 仅保留与本 SKILL 不冲突、且属于自身执行细节的说明；凡属上述 1-5 的约束，

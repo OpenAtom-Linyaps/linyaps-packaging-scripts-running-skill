@@ -48,7 +48,7 @@ user-invocable: false
 }
 ```
 
-**消费者**：packer agent 中步骤 7.6（`status_upload.sh` vs `status_upload_initOnly.sh` 选择）
+**消费者**：packer agent 中步骤 7.6（`status_upload.sh` vs `status_upload_initOnly.sh` 选择）。两个上传脚本均启 exec-proof 门禁：binary 任务成功上报必须带 `run_tasks.sh` 生成的 exec-proof（constraints §6），source 任务须显式传 `TASK_TYPE=source`；init-source 任务因属 source 类型而豁免，但仍可用 initOnly 脚本的初始化专用 webhook 端点。
 
 1. 从 `MULTICA_ISSUE_TASK_ID` 读取并严格校验当前 issue UUID；禁止使用 `multica issue list --limit 1` 或评论内容推断身份。
 2. 通过 `multica issue comment list "<ISSUE_ID>" --output json` 获取评论并匹配初始化来源。

@@ -57,6 +57,45 @@ init_directories
 SUCCESS_COUNT=0
 FAIL_COUNT=0
 declare -a RESULTS=()
+# write_exec_proof — 寫入 binary 構建執行憑證（constraints §6）
+# 参数:
+#   $1  out_dir    — 輸出目錄
+#   $2  pkg_name   — 包名
+#   $3  arch       — 架構
+#   $4  build_cmd  — 實際執行的完整命令行
+#   $5  exit_code  — 構建退出碼
+#   $6  started_at — 開始時間（ISO8601）
+#   $7  finished_at — 結束時間（ISO8601）
+#   $8...         — layer 文件路徑（一個或多個）
+write_exec_proof() {
+    local out_dir="$1" pkg_name="$2" arch="$3" build_cmd="$4" exit_code="$5" started_at="$6" finished_at="$7"
+    shift 7
+
+    local proof="$out_dir/${pkg_name}.exec-proof.json"
+    local -a layer_entries=()
+    local layer_file digest entry
+    for layer_file in "$@"; do
+        [[ -f "$layer_file" ]] || continue
+        digest="$(sha256sum "$layer_file" | cut -d' ' -f1)"
+        entry="$(python3 -c 'import json,sys;print(json.dumps({"file":sys.argv[1],"sha256":sys.argv[2]}))' "$(basename "$layer_file")" "$digest")"
+        layer_entries+=("$entry")
+    done
+
+    local cmd_json
+    cmd_json="$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$build_cmd")"
+    {
+        echo "{"
+        echo "  \"pkg_name\": \"${pkg_name}\","
+        echo "  \"task_type\": \"binary\","
+        echo "  \"command\": ${cmd_json},"
+        echo "  \"exit_code\": ${exit_code},"
+        echo "  \"started_at\": \"${started_at}\","
+        echo "  \"finished_at\": \"${finished_at}\","
+        echo "  \"layers\": [$(IFS=,; echo "${layer_entries[*]}")]"
+        echo "}"
+    } > "$proof"
+    echo "exec-proof written: $proof"
+}
 
 run_task() {
     local idx="$1"
@@ -151,6 +190,8 @@ run_task() {
     local log_file="$OUTPUT_DIR/${pkg_name}.log"
     local start_time
     start_time=$(date +%s)
+    local started_at_iso
+    started_at_iso="$(date -Is)"
 
     if (
         cd "$project_dir" && build_with_retry "$pkg_name 打包（binary）" "$MAX_BUILD_ATTEMPTS" "$BUILD_TIMEOUT_SEC" "${cmd[@]}"
@@ -178,8 +219,17 @@ run_task() {
             }
         fi
 
-        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-        RESULTS+=("$pkg_name: 成功 (${elapsed}s)")
+        # exec-proof（constraints §6）：成功路徑寫入執行憑證，供 status_upload.sh 門禁校驗
+        local build_cmd_str finished_at_iso
+        finished_at_iso="$(date -Is)"
+        build_cmd_str="$(printf '%q ' "${cmd[@]}")"
+        local -a proof_layers=()
+        local layer_glob
+        for layer_glob in "$OUTPUT_DIR/${pkg_name}_"*"_binary.layer"; do
+            [[ -f "$layer_glob" ]] && proof_layers+=("$layer_glob")
+        done
+        write_exec_proof "$OUTPUT_DIR" "$pkg_name" "$arch" "$build_cmd_str" 0 "$started_at_iso" "$finished_at_iso" ${proof_layers[@]+"${proof_layers[@]}"} \
+            || echo "warn: failed to write exec-proof for $pkg_name (gate will block upload)"
     else
         local end_time
         end_time=$(date +%s)

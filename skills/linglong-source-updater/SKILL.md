@@ -17,7 +17,7 @@ user-invocable: false
 
 执行顺序固定为 Phase A 更新 → Phase B LLM 只读复核 → Phase C `ll-builder build`/`export`。Phase A 使用 `validate-linglong-yaml.py`、`download-and-checksum.sh`、`update-linglong-yaml.py`；LLM 不直接编辑 YAML，异常时重跑 A-2~A-3。
 
-构建必须使用本轮 `orig_version`、本轮 digest 与本轮 export 产物；不得沿用历史 version、digest 或 `.layer`。构建前后按公共 constraints 的锁、持久化、超时和日志规则执行，monitor-build/status 用于长构建轮询。
+构建必须使用本轮 `orig_version`、本轮 digest 与本轮 export 产物；不得沿用历史 version、digest 或 `.layer`。构建前后按公共 constraints 的锁、持久化、超时和日志规则执行，monitor-build/status 用于长构建轮询。成功上报以 TASK_TYPE=source 调用 status_upload.sh（constraints §6）。
 
 `package.id` 优先对应任务 `pkgName`；`package.version` 为四段数字且各段不以 0 开头；sources digest 不含 `sha256:` 前缀。公共 `${PREFIX}`、安装路径、apt 和修改日志规则只引用 `linyaps-packaging.constraints`。
 
