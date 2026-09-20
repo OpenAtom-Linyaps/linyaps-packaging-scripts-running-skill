@@ -97,6 +97,21 @@ write_exec_proof() {
     echo "exec-proof written: $proof"
 }
 
+# _report_status — 調用 status_upload.sh 上傳產物並回報狀態（report skill）
+# 參數:
+#   $1  filepath  — layer 文件路徑；"null" 表示無產物（失敗/阻塞）
+#   $2  status    — pakStatus 值：non-verified / failed / upload-failed
+#   $3  pkg_name  — 包名
+#   $4  arch      — 架構
+#   $5  orig_ver  — 上游版本號
+_report_status() {
+    local filepath="$1" status="$2" pkg_name="$3" arch="$4" orig_ver="$5"
+    export TASK_TYPE=binary
+    bash "$REPO_ROOT/skills/linyaps-packaging-report/scripts/status_upload.sh" \
+        "$filepath" "$orig_ver" "$status" "$pkg_name" "$arch" \
+        || echo "warn: status_upload.sh failed for $pkg_name (exit $?)"
+}
+
 run_task() {
     local idx="$1"
     local pkg_name_var="TASK_${idx}_PKGNAME"
@@ -126,7 +141,7 @@ run_task() {
             log_err "無法從 URL 提取版本號: $src_url"
             FAIL_COUNT=$((FAIL_COUNT + 1))
             RESULTS+=("$pkg_name: 失敗 (無法提取版本號)")
-            return
+            _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
         fi
     fi
 
@@ -134,14 +149,14 @@ run_task() {
         log_err "架構不匹配，跳過任務 $pkg_name"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (架構不匹配: URL 架構 vs 宣告 arch=${arch})")
-        return
+        _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
     fi
 
     local src_path
     src_path=$(download_source "$src_url" "$SRC_DIR" "$pkg_name") || {
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (下載失敗)")
-        return
+        _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
     }
 
     local project_dir
@@ -149,7 +164,7 @@ run_task() {
         log_err "找不到項目目錄: $pkg_name (在 $PACK_REPO_DIR 下)"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (找不到項目目錄)")
-        return
+        _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
     }
     log_ok "項目目錄: $project_dir"
 
@@ -161,7 +176,7 @@ run_task() {
         log_err "無法建立任務緩存目錄（根目錄: $BUILD_TMP_DIR）"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (無法建立任務緩存目錄)")
-        return
+        _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
     fi
     log_info "任務緩存目錄: $task_build_tmp_dir"
 
@@ -210,12 +225,12 @@ run_task() {
                 log_err "blocked: issue_id_required; refusing unbound fix-log comment"
                 FAIL_COUNT=$((FAIL_COUNT + 1))
                 RESULTS+=("$pkg_name: 阻塞 (缺少任务 issue ID)")
-                return
+                _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
             fi
             log_info "檢測到修改日志，發布到 issue..."
             bash "$REPO_ROOT/skills/linyaps-multica-packer-dispatch/scripts/dispatch.sh" post_fix_log --pkgName="$pkg_name" --fix-log-path="$fix_log_path" ${DATA_DIR:+--data-dir="$DATA_DIR"} || {
                 log_err "blocked: fix-log publication failed"
-                FAIL_COUNT=$((FAIL_COUNT + 1)); RESULTS+=("$pkg_name: 阻塞 (修改日志未绑定发布)"); return
+                _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
             }
         fi
 
@@ -230,6 +245,14 @@ run_task() {
         done
         write_exec_proof "$OUTPUT_DIR" "$pkg_name" "$arch" "$build_cmd_str" 0 "$started_at_iso" "$finished_at_iso" ${proof_layers[@]+"${proof_layers[@]}"} \
             || echo "warn: failed to write exec-proof for $pkg_name (gate will block upload)"
+
+        # ── 上傳至 S3 並回報狀態（report skill）─────────────────
+        if [[ ${#proof_layers[@]} -gt 0 ]]; then
+            _report_status "${proof_layers[0]}" "non-verified" "$pkg_name" "$arch" "$orig_version"
+        else
+            echo "warn: no layer file found for $pkg_name, reporting failed"
+            _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
+        fi
     else
         local end_time
         end_time=$(date +%s)
@@ -238,7 +261,7 @@ run_task() {
         log_err "錯誤輸出:"
         tail -10 "$log_file" | sed 's/^/  /'
         FAIL_COUNT=$((FAIL_COUNT + 1))
-        RESULTS+=("$pkg_name: 失敗 (詳見 $log_file)")
+        _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
     fi
     echo ""
 }
