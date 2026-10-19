@@ -71,12 +71,12 @@ user-invocable: false
   "arch": "x86_64",
   "type": "binary",
   "orig_version": "1.0",
-  "agent_name": "<CLI 真实 agent name，由 Agent 运行时决策并显式传入>"
+  "agent_name": "<可选：CLI 真实 agent name，覆盖脚本端选择>"
 }
 ```
 
-- `type`：`"binary"` 或 `"source"`，决定指派目标的**能力**（`project_init` / `src_project_init`）
-- `agent_name`**：目标 agent 的 **CLI 真实 name**（如 `linyaps-init-1` / `linyaps-src-init-1`）。**必须由 Agent（LLM）运行时决策**并显式传入：脚本**不**做 config slug/中文 name → CLI name 的映射。
+- `type`：`"binary"` 或 `"source"`，作为**精确类型过滤**候选池（`agent.type == $TYPE`）
+- `agent_name`**：可选覆盖。传入时**跳过脚本端候选池选择**，直接按 CLI 真实 name 解析 uuid 并指派（保留 LLM 运行时显式指派能力）；缺省时由脚本端按 `type` 过滤 + idle 优先 + 负载感知决胜自动选择。
 
 **输出**：
 ```json
@@ -84,41 +84,40 @@ user-invocable: false
   "assigned": true,
   "target_agent": "linyaps-init-1",
   "target_agent_uuid": "353646a1-0adb-4e5f-be22-1de300ef4104",
+  "reason": "idle_first",
+  "id_fallback": false,
   "timestamp": "2026-07-09 10:30:00",
   "agent_status": "idle"
 }
 ```
 
+- `reason`：选择路径，取值 `agent_name_override` / `idle_first` / `load_aware` / `id_fallback` / `no_candidate` / `agent_uuid_missing`
+- `id_fallback`：布尔值，`true` 表示因候选 uuid 全部无效退回 `cfg_id` 作 `--to-id`（违反 issue-68 约束的紧急降级，部署须回填真实 uuid 以消除该路径）
+
 **执行逻辑**：
-1. 从 `for-multica/agent-config.json` 的 `assignment.agents[]` 筛选目标**能力**（决策依据，不充当 CLI name）：
-   - `type=binary` → capabilities 包含 `project_init` 的 agent
-   - `type=source` → capabilities 包含 `src_project_init` 的 agent
-2. **按 CLI 真实 name 提取 uuid**：`agent_name` 必填，缺失则输出 `agent_name_required` 并跳过；随后调用 `get_agent_uuid_by_name()`（`multica agent list --output json` 的 `name → id`）解析**精确 agent UUID**。
-3. **状态检查（热备方案）**：
-   ```bash
-   bash skills/linyaps-multica-packer-dispatch/scripts/check-agent-status.sh \
-     -w "<global.workspace 解析值>" \
-     -n "<CLI 真实 agent name>" \
-     -o json
-   ```
-   - `idle` → 记录"目标空闲，可立即指派"
-   - `busy` → 记录警告"目标繁忙，仍发起指派（由平台排队）"，**不阻断**
-   - 脚本报错 → 记录警告"无法查询状态，直接发起指派"，**不阻断**
-4. **指派执行**：`ISSUE_ID=$(get_issue_id)` 精确 UUID；发送 UUID 绑定提到 `mention://agent/<uuid>` 的评论，再用 `--to-id <uuid>` 指派：
-   ```bash
-   ISSUE_ID=$(get_issue_id)
-   if [ -n "$ISSUE_ID" ]; then
-     MENTION="[@${TARGET_AGENT_NAME}](mention://agent/${TARGET_AGENT_UUID})"
-     multica issue comment add "$ISSUE_ID" --content "${MENTION} 请为 ${pkgName} 进行项目初始化适配工作（${arch}）。下载地址：${src_url}" --output json
-     multica issue assign "$ISSUE_ID" --to-id "${TARGET_AGENT_UUID}"
-   fi
-   ```
+1. **候选池筛选**：从 `for-multica/agent-config.json` 的 `assignment.agents[]` 按**精确 `type` 字段**过滤（`agent.type == $TYPE`），emit `cfg_id<TAB>cfg_uuid<TAB>cfg_name`。
+2. **选择路径**（二选一）：
+   - **A. `--agent-name` 覆盖路径**（`agent_name` 非空）：跳过候选池选择，按 CLI 真实 name 调 `get_agent_uuid_by_name()` 解析精确 UUID。`reason=agent_name_override`。
+   - **B. 脚本端候选池选择**（`agent_name` 省略，默认路径）：
+     1. 校验候选 uuid：`is_uuid(cfg_uuid)` → `valid_list` / `invalid_uuid_list`
+     2. `valid_list` 非空 → 查询每个候选状态（`check-agent-status.sh -u <uuid>`），分 `idle_list` / `busy_list`：
+        - `idle_list` 非空 → 随机抽一个，`reason=idle_first`
+        - `idle_list` 空 → 取 `running_count` 最小者，同负载随机抽一个，`reason=load_aware`
+     3. `valid_list` 空 + `invalid_uuid_list` 非空 → id fallback：随机抽一个用 `cfg_id` 作 `--to-id`，`reason=id_fallback`、`id_fallback=true`（**违反 issue-68 `--to-id <uuid>` 约束，紧急降级路径，部署须回填真实 uuid 以消除**）
+     4. 两者皆空 → `reason=no_candidate`，跳过指派
+3. **状态检查**：
+   - 覆盖路径：调 `check-agent-status.sh -n <name>` 查询一次
+   - 脚本端 valid_list 路径：选择循环已查状态，复用 `PICKED_AGENT_STATUS`，不重复查询
+   - id_fallback 路径：uuid 无效，状态不可查，记 `unknown`
+4. **指派执行**：`ISSUE_ID=$(get_issue_id)` 精确 UUID：
+   - 正常路径（`id_fallback=false`）：发送 `[@name](mention://agent/<uuid>)` 评论 + `multica issue assign --to-id <uuid>`
+   - id_fallback 路径：跳过 mention（uuid 无效无法构造 URI）+ `multica issue assign --to-id <cfg_id>`（紧急降级）
 5. **记录指派日志**：写入 `data_dir/assignment.log`：
    ```
    assigned_init, <pkgName>, <agent_name>, <arch>, <timestamp>      # binary
    assigned_src_init, <pkgName>, <agent_name>, <arch>, source, <timestamp>  # source
    ```
-6. multica CLI 不可用 → `cli_unavailable`；查不到 ISSUE_ID → `issue_id_not_found`；agent name 未匹配 → `agent_uuid_missing`。均记录警告，**不阻断**
+6. multica CLI 不可用 → `cli_unavailable`；查不到 ISSUE_ID → `issue_id_not_found`；覆盖路径 name 未匹配 → `agent_uuid_missing`。均记录警告，**不阻断**
 
 ### Action 3: `update_issue_status`
 
@@ -176,11 +175,13 @@ user-invocable: false
 
 ### `assignment.agents[]`
 
-| agent id | capabilities | 触发条件 |
-|----------|-------------|---------|
-| `init-tracker` | `project_init` | binary 任务找不到项目目录 |
-| `linyaps-src-init-1` | `src_project_init` | source 任务找不到项目目录 |
-| `linyaps-src-init-2` | `src_project_init` | source 任务找不到项目目录（热备） |
+| agent id | uuid (占位) | type | capabilities | 触发条件 |
+|----------|-------------|------|-------------|---------|
+| `init-tracker` | `…0001` | `binary` | `project_init` | binary 任务找不到项目目录 |
+| `linyaps-src-init-1` | `…0002` | `source` | `src_project_init` | source 任务找不到项目目录 |
+| `linyaps-src-init-2` | `…0003` | `source` | `src_project_init` | source 任务找不到项目目录（热备） |
+
+> `uuid` 字段为占位值（`00000000-0000-4000-8000-00000000000X`），部署后须回填真实 multica agent UUID。`type` 为脚本端候选池过滤的精确字段（`agent.type == $TYPE`）。packer 类（`linyaps-packer-1/2`）与 `upstream-tracker` 不参与 init 指派，故无 `type` 字段。
 
 ### `assignment.default_strategy`
 
@@ -228,10 +229,12 @@ LLM 修复项目问题后，将修改日志发布为 issue comment。
 2. **与 agent-config.json 的 assignment 区段绑定**：目标 agent 列表、策略均从配置读取
 3. **支持横向扩展**：`linyaps-packer-1`、`linyaps-packer-2` 均可调用，共享同一份 dispatch 逻辑
 4. **`check_endpoint` 冷备未上线**：当前 `check_endpoint` 字段为 `null`，使用 `check-agent-status.sh` 脚本作为热备方案；后续上线后改由端点查询
-5. **精确 UUID 管理（强制）**：
+5. **精确 UUID 管理（强制）+ 脚本端候选池选择**：
    - issue / agent / workspace 一律以 multica `--output json` 返回的 `id`（UUID）为唯一标识，禁止 `grep issue-\d+` / `comment-\d+` / `--to <slug>` / `@name` 模糊匹配
    - 指派必须用 `--to-id <agent-uuid>`；@mention 必须用 `[@name](mention://agent/<uuid>)`
-   - **agent 一律「按 CLI 真实 name」提取 uuid**（`multica agent list --output json` 的 `name → id`）；config 的 `assignment.agents[].id`（slug/中文）**不**等于 CLI name，slug→CLI name 映射由 Agent（LLM）运行时决策并以 `--agent-name=<CLI name>` 显式传入，**脚本不硬编码映射**
+   - **默认路径由脚本端候选池选择**：按 `agent.type == $TYPE` 精确过滤 + idle 优先 + 负载感知决胜（同负载随机抽），候选 uuid 须通过 `is_uuid()` 校验
+   - **`--agent-name` 为可选覆盖**：传入时跳过候选池选择，按 CLI 真实 name 调 `get_agent_uuid_by_name()` 解析 uuid（保留 LLM 运行时显式指派能力）
+   - **id_fallback 紧急降级路径**：候选 uuid 全部无效时退回 `cfg_id` 作 `--to-id`，**违反 issue-68 `--to-id <uuid>` 约束**，仅作紧急降级存在；部署须回填真实 multica agent UUID 到 config `uuid` 字段以消除该路径。id_fallback 路径跳过 mention（uuid 无效无法构造 `mention://agent/<uuid>`）
 
 ## 输出与日志边界
 

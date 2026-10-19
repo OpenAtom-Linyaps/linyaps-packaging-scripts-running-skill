@@ -12,8 +12,8 @@ set -euo pipefail
 REPO_ROOT="${REPO_ROOT:-}"
 
 if [[ -z "$REPO_ROOT" ]]; then
-    SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    REPO_ROOT="$(cd "$SRC_DIR/.." && pwd)"
+	SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+	REPO_ROOT="$(cd "$SRC_DIR/.." && pwd)"
 fi
 
 ARCH_MAPPING_FILE="${REPO_ROOT}/skills/config/arch_mapping.json"
@@ -24,16 +24,16 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-log_info()  { echo -e "${CYAN}[INFO]${NC} $*" >&2; }
-log_ok()    { echo -e "${GREEN}[OK]${NC} $*" >&2; }
-log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*" >&2; }
-log_err()   { echo -e "${RED}[ERROR]${NC} $*" >&2; }
+log_info() { echo -e "${CYAN}[INFO]${NC} $*" >&2; }
+log_ok() { echo -e "${GREEN}[OK]${NC} $*" >&2; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $*" >&2; }
+log_err() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 
 check_python3() {
-    if ! command -v python3 &>/dev/null; then
-        log_err "需要 python3"
-        exit 1
-    fi
+	if ! command -v python3 &>/dev/null; then
+		log_err "需要 python3"
+		exit 1
+	fi
 }
 
 # ---- multica 精确 UUID 解析基元 ----
@@ -44,32 +44,32 @@ UUID_RE='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 
 # is_uuid <val> — 校验是否为精确 UUID
 is_uuid() {
-    [[ "${1:-}" =~ ^${UUID_RE}$ ]]
+	[[ "${1:-}" =~ ^${UUID_RE}$ ]]
 }
 
 # get_issue_id — immutable issue UUID supplied by the task handoff
 # Return codes: 0=success, 1=missing, 3=invalid UUID.
 get_issue_id() {
-    local id="${MULTICA_ISSUE_TASK_ID:-}"
-    if [[ -z "$id" ]]; then
-        log_err "blocked: issue_id_required (MULTICA_ISSUE_TASK_ID is unset)"
-        return 1
-    fi
-    if ! is_uuid "$id"; then
-        log_err "blocked: invalid_issue_uuid: $id"
-        return 3
-    fi
-    printf '%s\n' "$id"
+	local id="${MULTICA_ISSUE_TASK_ID:-}"
+	if [[ -z "$id" ]]; then
+		log_err "blocked: issue_id_required (MULTICA_ISSUE_TASK_ID is unset)"
+		return 1
+	fi
+	if ! is_uuid "$id"; then
+		log_err "blocked: invalid_issue_uuid: $id"
+		return 3
+	fi
+	printf '%s\n' "$id"
 }
 
 # get_agent_uuid_by_name <CLI 真实 agent name> — 按 CLI 真实 name 提取 agent uuid
 # 返回码: 0=成功 1=name/列表为空 2=CLI 异常 3=未匹配 4=无效 uuid；成功时输出 uuid
 get_agent_uuid_by_name() {
-    local name="$1" out id
-    [[ -z "$name" ]] && return 1
-    out=$(multica agent list --output json 2>/dev/null) || return 2
-    [[ -z "$out" ]] && return 1
-    id=$(python3 -c "
+	local name="$1" out id
+	[[ -z "$name" ]] && return 1
+	out=$(multica agent list --output json 2>/dev/null) || return 2
+	[[ -z "$out" ]] && return 1
+	id=$(python3 -c "
 import json,sys
 d=json.load(sys.stdin)
 L=d if isinstance(d,list) else d.get('agents', d.get('items', []))
@@ -77,35 +77,41 @@ for a in L:
     if a.get('name')==sys.argv[1]:
         print(a['id']); sys.exit(0)
 sys.exit(1)" "$name" <<<"$out") 2>/dev/null || return 3
-    if ! is_uuid "$id"; then log_warn "[multica] invalid_uuid: $id"; return 4; fi
-    echo "$id"
-    return 0
+	if ! is_uuid "$id"; then
+		log_warn "[multica] invalid_uuid: $id"
+		return 4
+	fi
+	echo "$id"
+	return 0
 }
 
 # get_comment_id <issue_id> <content> — add comment 并提取 comment uuid
 # 返回码: 0=成功 1=参数/评论为空 2=CLI 异常 3=无效 uuid；成功时输出 comment uuid
 get_comment_id() {
-    local issue_id="$1" content="$2" out id
-    if [[ -z "$issue_id" || -z "$content" ]]; then return 1; fi
-    out=$(multica issue comment add "$issue_id" --content "$content" --output json 2>/dev/null) || return 2
-    [[ -z "$out" ]] && return 1
-    id=$(python3 -c "import json,sys
+	local issue_id="$1" content="$2" out id
+	if [[ -z "$issue_id" || -z "$content" ]]; then return 1; fi
+	out=$(multica issue comment add "$issue_id" --content "$content" --output json 2>/dev/null) || return 2
+	[[ -z "$out" ]] && return 1
+	id=$(python3 -c "import json,sys
 d=json.load(sys.stdin)
 print(d.get('id','') if isinstance(d,dict) else '')" <<<"$out") 2>/dev/null || return 2
-    [[ -z "$id" ]] && return 1
-    if ! is_uuid "$id"; then log_warn "[multica] invalid_comment_uuid: $id"; return 3; fi
-    echo "$id"
-    return 0
+	[[ -z "$id" ]] && return 1
+	if ! is_uuid "$id"; then
+		log_warn "[multica] invalid_comment_uuid: $id"
+		return 3
+	fi
+	echo "$id"
+	return 0
 }
 
 # get_workspace_id <slug> — 按 slug 解析 workspace uuid
 # 返回码: 0=成功 1=空 2=CLI 异常 3=未匹配 4=无效 uuid；成功时输出 uuid
 get_workspace_id() {
-    local slug="$1" out id
-    [[ -z "$slug" ]] && return 1
-    out=$(multica workspace list --output json 2>/dev/null) || return 2
-    [[ -z "$out" ]] && return 1
-    id=$(python3 -c "
+	local slug="$1" out id
+	[[ -z "$slug" ]] && return 1
+	out=$(multica workspace list --output json 2>/dev/null) || return 2
+	[[ -z "$out" ]] && return 1
+	id=$(python3 -c "
 import json,sys
 d=json.load(sys.stdin)
 L=d if isinstance(d,list) else d.get('workspaces', d.get('items', []))
@@ -113,13 +119,16 @@ for w in L:
     if w.get('slug')==sys.argv[1]:
         print(w['id']); sys.exit(0)
 sys.exit(1)" "$slug" <<<"$out") 2>/dev/null || return 3
-    if ! is_uuid "$id"; then log_warn "[multica] invalid_workspace_uuid: $id"; return 4; fi
-    echo "$id"
-    return 0
+	if ! is_uuid "$id"; then
+		log_warn "[multica] invalid_workspace_uuid: $id"
+		return 4
+	fi
+	echo "$id"
+	return 0
 }
 
 parse_json() {
-    python3 -c "
+	python3 -c "
 import json, sys
 with open(sys.argv[1]) as f:
     data = json.load(f)
@@ -147,40 +156,40 @@ for i, t in enumerate(tasks):
 }
 
 json_strip() {
-    local val="$1"
-    val="${val//\"/}"
-    echo "$val"
+	local val="$1"
+	val="${val//\"/}"
+	echo "$val"
 }
 
 init_directories() {
-    mkdir -p "$SRC_DIR" "$OUTPUT_DIR"
+	mkdir -p "$SRC_DIR" "$OUTPUT_DIR"
 
-    if [[ -n "$BUILD_TMP_DIR" ]]; then
-        BUILD_TMP_DIR="$(cd "$BUILD_TMP_DIR" 2>/dev/null && pwd || mkdir -p "$BUILD_TMP_DIR" && cd "$BUILD_TMP_DIR" && pwd)"
-        log_info "緩存目錄:   $BUILD_TMP_DIR"
-    else
-        BUILD_TMP_DIR="$(mktemp -d)"
-        log_info "緩存目錄:   $BUILD_TMP_DIR (自動生成)"
-    fi
+	if [[ -n "$BUILD_TMP_DIR" ]]; then
+		BUILD_TMP_DIR="$(cd "$BUILD_TMP_DIR" 2>/dev/null && pwd || mkdir -p "$BUILD_TMP_DIR" && cd "$BUILD_TMP_DIR" && pwd)"
+		log_info "緩存目錄:   $BUILD_TMP_DIR"
+	else
+		BUILD_TMP_DIR="$(mktemp -d)"
+		log_info "緩存目錄:   $BUILD_TMP_DIR (自動生成)"
+	fi
 
-    if [[ -n "$DATA_DIR" ]]; then
-        DATA_DIR="$(cd "$DATA_DIR" 2>/dev/null && pwd || mkdir -p "$DATA_DIR" && cd "$DATA_DIR" && pwd)"
-        log_info "數據目錄:   $DATA_DIR"
-    fi
+	if [[ -n "$DATA_DIR" ]]; then
+		DATA_DIR="$(cd "$DATA_DIR" 2>/dev/null && pwd || mkdir -p "$DATA_DIR" && cd "$DATA_DIR" && pwd)"
+		log_info "數據目錄:   $DATA_DIR"
+	fi
 }
 
 extract_version_from_url() {
-    local url="$1"
-    local pkg_name="$2"
-    local config_file="${3:-${CONFIG_FILE:-}}"
+	local url="$1"
+	local pkg_name="$2"
+	local config_file="${3:-${CONFIG_FILE:-}}"
 
-    if [[ -z "$config_file" || ! -f "$config_file" ]]; then
-        echo "$url" | grep -oP '\d+\.\d+\.\d+(?:\.\d+)?' | head -1
-        return
-    fi
+	if [[ -z "$config_file" || ! -f "$config_file" ]]; then
+		echo "$url" | grep -oP '\d+\.\d+\.\d+(?:\.\d+)?' | head -1
+		return
+	fi
 
-    local regex
-    regex=$(python3 -c "
+	local regex
+	regex=$(python3 -c "
 import json, re, sys
 with open(sys.argv[1]) as f:
     data = json.load(f)
@@ -191,31 +200,31 @@ for ex in data.get('version_extract_examples', []):
         break
 " "$config_file" "$pkg_name" 2>/dev/null) || true
 
-    if [[ -n "$regex" ]]; then
-        local ver
-        ver=$(echo "$url" | grep -oP "$regex" | head -1) || true
-        if [[ -n "$ver" ]]; then
-            echo "$ver"
-            return
-        fi
-    fi
+	if [[ -n "$regex" ]]; then
+		local ver
+		ver=$(echo "$url" | grep -oP "$regex" | head -1) || true
+		if [[ -n "$ver" ]]; then
+			echo "$ver"
+			return
+		fi
+	fi
 
-    echo "$url" | grep -oP '\d+\.\d+\.\d+(?:\.\d+)?' | head -1
+	echo "$url" | grep -oP '\d+\.\d+\.\d+(?:\.\d+)?' | head -1
 }
 
 validate_arch_match() {
-    local src_url="$1"
-    local declared_arch="$2"
-    local mapping_file="${3:-$ARCH_MAPPING_FILE}"
-    local pkg_name="$4"
+	local src_url="$1"
+	local declared_arch="$2"
+	local mapping_file="${3:-$ARCH_MAPPING_FILE}"
+	local pkg_name="$4"
 
-    if [[ ! -f "$mapping_file" ]]; then
-        log_warn "架構映射表不存在: $mapping_file，跳過驗證"
-        return 0
-    fi
+	if [[ ! -f "$mapping_file" ]]; then
+		log_warn "架構映射表不存在: $mapping_file，跳過驗證"
+		return 0
+	fi
 
-    local result
-    result=$(python3 -c "
+	local result
+	result=$(python3 -c "
 import json, re, sys
 
 url = sys.argv[1]
@@ -267,80 +276,80 @@ else:
         print('STATUS=MISMATCH')
         print('URL_ARCHES=' + url_arches_str)
 " "$src_url" "$declared_arch" "$mapping_file" "$pkg_name" 2>/dev/null) || {
-        log_warn "架構驗證執行失敗（python 錯誤），跳過驗證"
-        return 0
-    }
+		log_warn "架構驗證執行失敗（python 錯誤），跳過驗證"
+		return 0
+	}
 
-    eval "$result"
+	eval "$result"
 
-    case "$STATUS" in
-        MATCH)
-            log_ok "架構驗證通過: URL 含架構(${URL_ARCHES}) → 宣告 arch(${declared_arch}) ✓"
-            return 0
-            ;;
-        MISMATCH)
-            log_err "架構不匹配: URL 含架構(${URL_ARCHES})，但宣告 arch 為 ${declared_arch}"
-            return 1
-            ;;
-        UNKNOWN)
-            log_warn "架構無法自動識別，請 LLM 分析:"
-            echo ""
-            echo "  ╔══════════════════════════════════════════════╗"
-            echo "  ║        LLM 架構分析請求                       ║"
-            echo "  ╠══════════════════════════════════════════════╣"
-            echo "  ║  包名:      ${pkg_name}"
-            echo "  ║  src_url:   ${src_url}"
-            echo "  ║  宣告 arch: ${declared_arch}"
-            echo "  ║                                              ║"
-            echo "  ║  請分析 src_url 中的架構特徵，與宣告 arch    ║"
-            echo "  ║  是否匹配。若不匹配請修正 tasks[].arch。     ║"
-            echo "  ╚══════════════════════════════════════════════╝"
-            echo ""
-            return 0
-            ;;
-    esac
+	case "$STATUS" in
+	MATCH)
+		log_ok "架構驗證通過: URL 含架構(${URL_ARCHES}) → 宣告 arch(${declared_arch}) ✓"
+		return 0
+		;;
+	MISMATCH)
+		log_err "架構不匹配: URL 含架構(${URL_ARCHES})，但宣告 arch 為 ${declared_arch}"
+		return 1
+		;;
+	UNKNOWN)
+		log_warn "架構無法自動識別，請 LLM 分析:"
+		echo ""
+		echo "  ╔══════════════════════════════════════════════╗"
+		echo "  ║        LLM 架構分析請求                       ║"
+		echo "  ╠══════════════════════════════════════════════╣"
+		echo "  ║  包名:      ${pkg_name}"
+		echo "  ║  src_url:   ${src_url}"
+		echo "  ║  宣告 arch: ${declared_arch}"
+		echo "  ║                                              ║"
+		echo "  ║  請分析 src_url 中的架構特徵，與宣告 arch    ║"
+		echo "  ║  是否匹配。若不匹配請修正 tasks[].arch。     ║"
+		echo "  ╚══════════════════════════════════════════════╝"
+		echo ""
+		return 0
+		;;
+	esac
 }
 
 download_source() {
-    local url="$1"
-    local dest_dir="$2"
-    local pkg_name="$3"
+	local url="$1"
+	local dest_dir="$2"
+	local pkg_name="$3"
 
-    local filename
-    filename=$(basename "$url")
+	local filename
+	filename=$(basename "$url")
 
-    if [[ "$url" == *"/latest/"* ]]; then
-        log_info "檢測到重定向 URL，嘗試解析實際下載地址..."
-        local redirect_url
-        redirect_url=$(curl -sIL "$url" 2>/dev/null | grep -i '^location:' | tail -1 | awk '{print $2}' | tr -d '\r')
-        if [[ -n "$redirect_url" ]]; then
-            url="$redirect_url"
-            filename=$(basename "$url")
-            log_info "實際下載地址: $url"
-        fi
-    fi
+	if [[ "$url" == *"/latest/"* ]]; then
+		log_info "檢測到重定向 URL，嘗試解析實際下載地址..."
+		local redirect_url
+		redirect_url=$(curl -sIL "$url" 2>/dev/null | grep -i '^location:' | tail -1 | awk '{print $2}' | tr -d '\r')
+		if [[ -n "$redirect_url" ]]; then
+			url="$redirect_url"
+			filename=$(basename "$url")
+			log_info "實際下載地址: $url"
+		fi
+	fi
 
-    local dest_path="$dest_dir/$filename"
+	local dest_path="$dest_dir/$filename"
 
-    if [[ -f "$dest_path" ]]; then
-        log_ok "資源已存在: $dest_path"
-        echo "$dest_path"
-        return
-    fi
+	if [[ -f "$dest_path" ]]; then
+		log_ok "資源已存在: $dest_path"
+		echo "$dest_path"
+		return
+	fi
 
-    log_info "下載: $url"
-    if curl -L --progress-bar -o "$dest_path" "$url" >/dev/null; then
-        log_ok "下載完成: $dest_path"
-        echo "$dest_path"
-    else
-        log_err "下載失敗: $url"
-        return 1
-    fi
+	log_info "下載: $url"
+	if curl -L --progress-bar -o "$dest_path" "$url" >/dev/null; then
+		log_ok "下載完成: $dest_path"
+		echo "$dest_path"
+	else
+		log_err "下載失敗: $url"
+		return 1
+	fi
 }
 
 supports_build_tmp_dir() {
-    local script_path="$1"
-    grep -q 'build_tmp_dir' "$script_path" 2>/dev/null
+	local script_path="$1"
+	grep -q 'build_tmp_dir' "$script_path" 2>/dev/null
 }
 
 # sync_projects_root — 安全同步 pack_repo_dir 打包脚本仓库（fetch + stash -u + rebase + stash pop）
@@ -351,142 +360,142 @@ supports_build_tmp_dir() {
 #   0  成功 / 无需同步 / 未配置 repo
 #   1  clone 或 rebase / stash 冲突，需阻断流程（本地改动保留在 stash / 工作区，不丢失）
 sync_projects_root() {
-    local repo_url="$1"
-    local root="$2"
+	local repo_url="$1"
+	local root="$2"
 
-    if [[ -z "$repo_url" ]]; then
-        log_warn "未配置 projects_repo，跳过同步"
-        return 0
-    fi
+	if [[ -z "$repo_url" ]]; then
+		log_warn "未配置 projects_repo，跳过同步"
+		return 0
+	fi
 
-    if [[ ! -e "$root/.git" ]]; then
-        log_info "克隆打包脚本仓库: $repo_url"
-        if ! git clone "$repo_url" "$root" 2>&1; then
-            log_err "克隆失败: $repo_url"
-            return 1
-        fi
-        return 0
-    fi
+	if [[ ! -e "$root/.git" ]]; then
+		log_info "克隆打包脚本仓库: $repo_url"
+		if ! git clone "$repo_url" "$root" 2>&1; then
+			log_err "克隆失败: $repo_url"
+			return 1
+		fi
+		return 0
+	fi
 
-    if ! git -C "$root" fetch origin 2>&1; then
-        log_warn "git fetch 失败，保留现有快取继续"
-        return 0
-    fi
+	if ! git -C "$root" fetch origin 2>&1; then
+		log_warn "git fetch 失败，保留现有快取继续"
+		return 0
+	fi
 
-    local branch behind
-    branch=$(git -C "$root" rev-parse --abbrev-ref HEAD)
-    behind=$(git -C "$root" rev-list --count "HEAD..origin/$branch" 2>/dev/null || echo 0)
-    if [[ "$behind" == "0" ]]; then
-        log_ok "pack_repo_dir 已是最新"
-        return 0
-    fi
+	local branch behind
+	branch=$(git -C "$root" rev-parse --abbrev-ref HEAD)
+	behind=$(git -C "$root" rev-list --count "HEAD..origin/$branch" 2>/dev/null || echo 0)
+	if [[ "$behind" == "0" ]]; then
+		log_ok "pack_repo_dir 已是最新"
+		return 0
+	fi
 
-    log_info "本地落后上游 $behind 个提交，开始安全同步"
+	log_info "本地落后上游 $behind 个提交，开始安全同步"
 
-    if git -C "$root" stash push -u -m "linyaps-presync" >/dev/null 2>&1; then
-        if ! git -C "$root" rebase --autostash "origin/$branch" 2>&1; then
-            git -C "$root" rebase --abort >/dev/null 2>&1
-            log_err "rebase 冲突，已中止，本地改动保留在 stash，阻断本次任务"
-            return 1
-        fi
-        if ! git -C "$root" stash pop 2>&1; then
-            log_err "stash 恢复冲突，本地改动保留在工作区，阻断本次任务"
-            return 1
-        fi
-    else
-        if ! git -C "$root" rebase --autostash "origin/$branch" 2>&1; then
-            git -C "$root" rebase --abort >/dev/null 2>&1
-            log_err "rebase 冲突，已中止，阻断本次任务"
-            return 1
-        fi
-    fi
-    return 0
+	if git -C "$root" stash push -u -m "linyaps-presync" >/dev/null 2>&1; then
+		if ! git -C "$root" rebase --autostash "origin/$branch" 2>&1; then
+			git -C "$root" rebase --abort >/dev/null 2>&1
+			log_err "rebase 冲突，已中止，本地改动保留在 stash，阻断本次任务"
+			return 1
+		fi
+		if ! git -C "$root" stash pop 2>&1; then
+			log_err "stash 恢复冲突，本地改动保留在工作区，阻断本次任务"
+			return 1
+		fi
+	else
+		if ! git -C "$root" rebase --autostash "origin/$branch" 2>&1; then
+			git -C "$root" rebase --abort >/dev/null 2>&1
+			log_err "rebase 冲突，已中止，阻断本次任务"
+			return 1
+		fi
+	fi
+	return 0
 }
 
 find_project_dir() {
-    local pkg_name="$1"
-    local root="$2"
+	local pkg_name="$1"
+	local root="$2"
 
-    local candidate="$root/CI_ll_${pkg_name}"
-    if [[ -d "$candidate" && -f "$candidate/pak_linyaps.sh" ]]; then
-        echo "$candidate"
-        return
-    fi
+	local candidate="$root/CI_ll_${pkg_name}"
+	if [[ -d "$candidate" && -f "$candidate/pak_linyaps.sh" ]]; then
+		echo "$candidate"
+		return
+	fi
 
-    candidate="$root/$pkg_name"
-    if [[ -d "$candidate" && -f "$candidate/pak_linyaps.sh" ]]; then
-        echo "$candidate"
-        return
-    fi
+	candidate="$root/$pkg_name"
+	if [[ -d "$candidate" && -f "$candidate/pak_linyaps.sh" ]]; then
+		echo "$candidate"
+		return
+	fi
 
-    local found
-    found=$(
-        find "$root" -maxdepth 2 -type d \( -name "CI_ll_${pkg_name}" -o -name "$pkg_name" \) 2>/dev/null | while read -r d; do
-            local base="${d##*/}"
-            [[ "$base" == "CI_ll_${pkg_name}" || "$base" == "$pkg_name" ]] || continue
-            [[ -f "$d/pak_linyaps.sh" ]] && echo "$d"
-        done
-    )
-    found=$(printf '%s\n' "$found" | sort -u | head -1)
+	local found
+	found=$(
+		find "$root" -maxdepth 2 -type d \( -name "CI_ll_${pkg_name}" -o -name "$pkg_name" \) 2>/dev/null | while read -r d; do
+			local base="${d##*/}"
+			[[ "$base" == "CI_ll_${pkg_name}" || "$base" == "$pkg_name" ]] || continue
+			[[ -f "$d/pak_linyaps.sh" ]] && echo "$d"
+		done
+	)
+	found=$(printf '%s\n' "$found" | sort -u | head -1)
 
-    return 1
+	return 1
 }
 
 find_source_project_dir() {
-    local pkg_name="$1"
-    local root="$2"
+	local pkg_name="$1"
+	local root="$2"
 
-    local candidate="$root/CI_ll_${pkg_name}"
-    if [[ -d "$candidate" && -f "$candidate/linglong.yaml" ]]; then
-        echo "$candidate"
-        return
-    fi
+	local candidate="$root/CI_ll_${pkg_name}"
+	if [[ -d "$candidate" && -f "$candidate/linglong.yaml" ]]; then
+		echo "$candidate"
+		return
+	fi
 
-    candidate="$root/$pkg_name"
-    if [[ -d "$candidate" && -f "$candidate/linglong.yaml" ]]; then
-        echo "$candidate"
-        return
-    fi
+	candidate="$root/$pkg_name"
+	if [[ -d "$candidate" && -f "$candidate/linglong.yaml" ]]; then
+		echo "$candidate"
+		return
+	fi
 
-    local found
-    found=$(
-        find "$root" -maxdepth 2 -type d \( -name "CI_ll_${pkg_name}" -o -name "$pkg_name" \) 2>/dev/null | while read -r d; do
-            local base="${d##*/}"
-            [[ "$base" == "CI_ll_${pkg_name}" || "$base" == "$pkg_name" ]] || continue
-            [[ -f "$d/linglong.yaml" ]] && echo "$d"
-        done
-    )
-    found=$(printf '%s\n' "$found" | sort -u | head -1)
+	local found
+	found=$(
+		find "$root" -maxdepth 2 -type d \( -name "CI_ll_${pkg_name}" -o -name "$pkg_name" \) 2>/dev/null | while read -r d; do
+			local base="${d##*/}"
+			[[ "$base" == "CI_ll_${pkg_name}" || "$base" == "$pkg_name" ]] || continue
+			[[ -f "$d/linglong.yaml" ]] && echo "$d"
+		done
+	)
+	found=$(printf '%s\n' "$found" | sort -u | head -1)
 
-    return 1
+	return 1
 }
 
 print_results_summary() {
-    local task_count="$1"
-    local success_count="$2"
-    local fail_count="$3"
-    shift 3
-    local -a results=("$@")
+	local task_count="$1"
+	local success_count="$2"
+	local fail_count="$3"
+	shift 3
+	local -a results=("$@")
 
-    echo ""
-    log_info "=========================================="
-    log_info "打包結果統計"
-    log_info "=========================================="
-    log_info "總計: $task_count | ${GREEN}成功: $success_count${NC} | ${RED}失敗: $fail_count${NC}"
-    echo ""
+	echo ""
+	log_info "=========================================="
+	log_info "打包結果統計"
+	log_info "=========================================="
+	log_info "總計: $task_count | ${GREEN}成功: $success_count${NC} | ${RED}失敗: $fail_count${NC}"
+	echo ""
 
-    for r in "${results[@]}"; do
-        if [[ "$r" == *": 成功"* ]]; then
-            echo -e "  ${GREEN}✓${NC} $r"
-        else
-            echo -e "  ${RED}✗${NC} $r"
-        fi
-    done
+	for r in "${results[@]}"; do
+		if [[ "$r" == *": 成功"* ]]; then
+			echo -e "  ${GREEN}✓${NC} $r"
+		else
+			echo -e "  ${RED}✗${NC} $r"
+		fi
+	done
 
-    echo ""
-    if [[ $fail_count -eq 0 ]]; then
-        log_ok "所有任務打包成功！"
-    else
-        log_warn "$fail_count 個任務失敗，請檢查日誌"
-    fi
+	echo ""
+	if [[ $fail_count -eq 0 ]]; then
+		log_ok "所有任務打包成功！"
+	else
+		log_warn "$fail_count 個任務失敗，請檢查日誌"
+	fi
 }

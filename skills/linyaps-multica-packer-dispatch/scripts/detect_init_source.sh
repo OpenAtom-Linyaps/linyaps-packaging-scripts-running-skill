@@ -20,15 +20,15 @@ WORKSPACE=""
 OUTPUT_FILE=""
 
 while [[ $# -gt 0 ]]; do
-  case "$1" in
-    --workspace=*) WORKSPACE="${1#*=}" ;;
-    --output=*)    OUTPUT_FILE="${1#*=}" ;;
-    *)
-      echo "未知参数: $1" >&2
-      exit 1
-      ;;
-  esac
-  shift
+	case "$1" in
+	--workspace=*) WORKSPACE="${1#*=}" ;;
+	--output=*) OUTPUT_FILE="${1#*=}" ;;
+	*)
+		echo "未知参数: $1" >&2
+		exit 1
+		;;
+	esac
+	shift
 done
 
 IS_INIT_ASSIGNED=false
@@ -36,20 +36,20 @@ SRC_INIT_ASSIGNED=false
 
 # 检测 multica CLI 是否可用
 if ! command -v multica &>/dev/null; then
-  echo '{"IS_INIT_ASSIGNED":false,"SRC_INIT_ASSIGNED":false}' >&2
-  echo '{"IS_INIT_ASSIGNED":false,"SRC_INIT_ASSIGNED":false}'
-  exit 0
+	echo '{"IS_INIT_ASSIGNED":false,"SRC_INIT_ASSIGNED":false}' >&2
+	echo '{"IS_INIT_ASSIGNED":false,"SRC_INIT_ASSIGNED":false}'
+	exit 0
 fi
 
 # 切换到指定 workspace
 if [[ -n "$WORKSPACE" ]]; then
-  multica workspace switch "$WORKSPACE" >/dev/null 2>&1 || true
+	multica workspace switch "$WORKSPACE" >/dev/null 2>&1 || true
 fi
 
 # Only the immutable handoff identity is valid; never infer from issue lists.
 if ! ISSUE_ID=$(get_issue_id); then
-  echo '{"blocked":true,"reason":"issue_id_required","IS_INIT_ASSIGNED":false,"SRC_INIT_ASSIGNED":false}'
-  exit 2
+	echo '{"blocked":true,"reason":"issue_id_required","IS_INIT_ASSIGNED":false,"SRC_INIT_ASSIGNED":false}'
+	exit 2
 fi
 export MULTICA_ISSUE_TASK_ID="$ISSUE_ID"
 
@@ -57,18 +57,19 @@ export MULTICA_ISSUE_TASK_ID="$ISSUE_ID"
 COMMENTS=$(multica issue comment list "$ISSUE_ID" --output json 2>/dev/null || echo "")
 
 if echo "$COMMENTS" | grep -q "linyaps-init"; then
-  IS_INIT_ASSIGNED=true
+	IS_INIT_ASSIGNED=true
 elif echo "$COMMENTS" | grep -q "linyaps-src-init"; then
-  SRC_INIT_ASSIGNED=true
+	SRC_INIT_ASSIGNED=true
 fi
 
-RESULT=$(cat <<JSON
+RESULT=$(
+	cat <<JSON
 {"IS_INIT_ASSIGNED":${IS_INIT_ASSIGNED},"SRC_INIT_ASSIGNED":${SRC_INIT_ASSIGNED}}
 JSON
 )
 
 if [[ -n "$OUTPUT_FILE" ]]; then
-  echo "$RESULT" > "$OUTPUT_FILE"
+	echo "$RESULT" >"$OUTPUT_FILE"
 else
-  echo "$RESULT"
+	echo "$RESULT"
 fi
