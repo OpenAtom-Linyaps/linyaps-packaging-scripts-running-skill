@@ -5,14 +5,14 @@
 
 ## 1. 背景与目标
 
-两个上报脚本（`status_upload.sh`、`status_upload_initOnly.sh`）当前用 GET 查询字符串向旧端点 `cooperation.uniontech.com/api/workflow/hooks/...` 回报状态。旧端点已弃用，迁移到 n8n POST JSON body 方案。
+两个上报脚本（`status_upload.sh`、`status_upload_initOnly.sh`）当前用 GET 查询字符串向旧端点 `<OLD_WEBHOOK_ENDPOINT>` 回报状态。旧端点已弃用，迁移到 n8n POST JSON body 方案。
 
 ### 新端点（用户已确认，均为 `/webhook/` 生产路径）
 
 | 端点变量 | 新 URL | 对应 n8n 工作流 / 数据表 |
 |---|---|---|
-| `WEBHOOK_URL`（常规打包） | `https://n8n.cicd.getdeepin.org/webhook/cc3680f7-b312-4e3b-98e8-41a9fd75563c` | `apps-packaging.workflow.json` → `agent-dev-appsPackaging-data` |
-| `WEBHOOK_INIT_URL`（初始化后首次打包） | `https://n8n.cicd.getdeepin.org/webhook/953c519d-b695-40fc-90cc-cd06f5ada3aa` | `apps-init.workflow.json` → `agent-dev-appsInit-data` |
+| `WEBHOOK_URL`（常规打包） | `<WEBHOOK_URL>` | `apps-packaging.workflow.json` → `agent-dev-appsPackaging-data` |
+| `WEBHOOK_INIT_URL`（初始化后首次打包） | `<WEBHOOK_INIT_URL>` | `apps-init.workflow.json` → `agent-dev-appsInit-data` |
 
 ### n8n 验证规则（来自 `examples/n8n-workflow/README.md` §4 + 工作流 Code 节点）
 
@@ -91,16 +91,16 @@ PLANEOF
 
 **第 10–11 行**（注释）：更新回退默认值描述：
 ```
-#   webhook_url      = https://n8n.cicd.getdeepin.org/webhook/cc3680f7-b312-4e3b-98e8-41a9fd75563c
-#   webhook_init_url = https://n8n.cicd.getdeepin.org/webhook/953c519d-b695-40fc-90cc-cd06f5ada3aa
+#   webhook_url      = <WEBHOOK_URL>
+#   webhook_init_url = <WEBHOOK_INIT_URL>
 ```
 
 **第 16–17 行**（注释）：同上。
 
 **第 46–47 行**（实际值）：
 ```bash
-WEBHOOK_URL="https://n8n.cicd.getdeepin.org/webhook/cc3680f7-b312-4e3b-98e8-41a9fd75563c"
-WEBHOOK_INIT_URL="https://n8n.cicd.getdeepin.org/webhook/953c519d-b695-40fc-90cc-cd06f5ada3aa"
+WEBHOOK_URL="<WEBHOOK_URL>"
+WEBHOOK_INIT_URL="<WEBHOOK_INIT_URL>"
 ```
 
 agent-config.json 解析逻辑（第 49–72 行）不变——仍支持从 config 覆盖 `webhook_url`/`webhook_init_url`，仅默认值改变。
@@ -377,7 +377,7 @@ check_network_webhook() {
 
 ## 5. 不在范围内
 
-- **`query_upstream.sh`**：已有自己的 n8n 端点 `https://n8n.cicd.getdeepin.org/webhook/1f678037-e7f2-484c-a28b-b5c233fde531`，不改动。
+- **`query_upstream.sh`**：已有自己的 n8n 端点 `<QUERY_UPSTREAM_API_URL>`，不改动。
 - **`check_network_upstream`**（precheck.sh 第 181–207 行）：检测 `query_upstream.sh` 的上游 API 可达性，不改动。
 - **agent-config.json**：不新增 webhook 字段覆盖。`report_endpoints.sh` 默认值即权威值。
 - **n8n 工作流 JSON**：不在本仓库维护范围（工作流在 n8n 实例上管理），仅 `examples/n8n-workflow/` 下的文档供参考。

@@ -7,11 +7,11 @@
     "build_tmp_dir": "./build_cache",
     "src_dir": "./src",
     "storage": {
-      "s3_remote": "cicd2:/linyaps/packaging-CI-output/",
-      "public_url_base": "https://rustfsadmin.cicd2.getdeepin.org/linyaps/packaging-CI-output/"
+      "s3_remote": "<S3_REMOTE>",
+      "public_url_base": "<PUBLIC_URL_BASE>"
     },
-    "webhook_url": "https://n8n.cicd.getdeepin.org/webhook/cc3680f7-b312-4e3b-98e8-41a9fd75563c",
-    "webhook_init_url": "https://n8n.cicd.getdeepin.org/webhook/953c519d-b695-40fc-90cc-cd06f5ada3aa"
+    "webhook_url": "<WEBHOOK_URL>",
+    "webhook_init_url": "<WEBHOOK_INIT_URL>"
   },
   "version_extract_examples": [
     {
