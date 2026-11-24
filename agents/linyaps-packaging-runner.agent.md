@@ -34,7 +34,7 @@ CSV 任务先调用 `skills/linyaps-multica-packer-dispatch/scripts/csv_to_json.
 2. 仅在 `src_url`、`arch` 或 `orig_version` 缺失时调用 `query_upstream.sh` 补缺；已有值不得覆盖。
 3. 按配置同步 `pack_repo_dir`，冲突阻断；加载 `linyaps-packaging.constraints` 一次，后续只引用其规范。
 4. 按 `tasks[].type` 分派：binary 使用 `linglong-binary-runner`/`pak_linyaps.sh`；source 先验证 YAML，再使用 `linglong-source-updater`/`ll-builder build` 与 `export`。binary 任务严禁临时打包命令；结果必须经 run_tasks.sh 的 exec-proof 门禁上报（constraints §6）。
-5. 子 skill 完成后立即执行 report skill 上传和状态回报——**无论成功或失败都必须调用 `status_upload.sh`**（binary 由 `run_tasks.sh` 自动执行，source 由 agent 显式调用）；最后汇总短结果。
+5. 子 skill 完成后立即执行 report skill 上传和状态回报——**无论成功或失败都必须调用 `status_upload.sh`**（binary 由 `run_tasks.sh` 自动执行，source 由 agent 显式调用）；initOnly 变体需额外传 `upstreamPkgName` 作为第 6 参数（由 agent 从任务上下文获取）。最后汇总短结果。
 
 每项结果仅保留：`pkgName`、`type`、`status`、`elapsed`、`attempts`、`artifact`、`error_summary`、`log_path`。完整构建日志留在本地 `log_path`，入口不读取完整日志、目录树或 API 原始响应。
 

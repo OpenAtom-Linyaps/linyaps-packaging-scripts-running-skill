@@ -32,10 +32,10 @@ YELLOW='\033[1;33m'
 CYAN='\033[0;36m'
 NC='\033[0m'
 
-log_info()  { echo -e "${CYAN}[INFO]${NC} $*"; }
-log_ok()    { echo -e "${GREEN}[OK]${NC} $*"; }
-log_warn()  { echo -e "${YELLOW}[WARN]${NC} $*"; }
-log_err()   { echo -e "${RED}[ERROR]${NC} $*"; }
+log_info() { echo -e "${CYAN}[INFO]${NC} $*"; }
+log_ok() { echo -e "${GREEN}[OK]${NC} $*"; }
+log_warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+log_err() { echo -e "${RED}[ERROR]${NC} $*"; }
 
 # ============================================================
 # 預設配置
@@ -49,7 +49,7 @@ DEFAULT_SRC_DIR="./src"
 # 使用說明
 # ============================================================
 show_help() {
-    cat <<'HELP'
+	cat <<'HELP'
 linyaps 任務導入工具：支持 CSV 和 JSON 格式
 
 用法:
@@ -107,100 +107,100 @@ DRY_RUN=false
 DEFAULT_TASK_TYPE="binary"
 
 parse_args() {
-    while [[ $# -gt 0 ]]; do
-        case "$1" in
-            --help|-h)
-                show_help
-                exit 0
-                ;;
-            --pack_repo_dir=*)
-                PACK_REPO_DIR="${1#*=}"
-                ;;
-            --output_dir=*)
-                OUTPUT_DIR="${1#*=}"
-                ;;
-            --build_tmp_dir=*)
-                BUILD_TMP_DIR="${1#*=}"
-                ;;
-            --src_dir=*)
-                SRC_DIR="${1#*=}"
-                ;;
-            --config=*)
-                CONFIG_FILE="${1#*=}"
-                ;;
-            --output=*)
-                OUTPUT_JSON="${1#*=}"
-                ;;
-            --dry-run)
-                DRY_RUN=true
-                ;;
-            --type=*)
-                DEFAULT_TASK_TYPE="${1#*=}"
-                ;;
-            -*)
-                log_err "未知選項: $1"
-                show_help
-                exit 1
-                ;;
-            *)
-                if [[ -z "$INPUT_FILE" ]]; then
-                    INPUT_FILE="$1"
-                else
-                    log_err "過多參數: $1"
-                    show_help
-                    exit 1
-                fi
-                ;;
-        esac
-        shift
-    done
+	while [[ $# -gt 0 ]]; do
+		case "$1" in
+		--help | -h)
+			show_help
+			exit 0
+			;;
+		--pack_repo_dir=*)
+			PACK_REPO_DIR="${1#*=}"
+			;;
+		--output_dir=*)
+			OUTPUT_DIR="${1#*=}"
+			;;
+		--build_tmp_dir=*)
+			BUILD_TMP_DIR="${1#*=}"
+			;;
+		--src_dir=*)
+			SRC_DIR="${1#*=}"
+			;;
+		--config=*)
+			CONFIG_FILE="${1#*=}"
+			;;
+		--output=*)
+			OUTPUT_JSON="${1#*=}"
+			;;
+		--dry-run)
+			DRY_RUN=true
+			;;
+		--type=*)
+			DEFAULT_TASK_TYPE="${1#*=}"
+			;;
+		-*)
+			log_err "未知選項: $1"
+			show_help
+			exit 1
+			;;
+		*)
+			if [[ -z "$INPUT_FILE" ]]; then
+				INPUT_FILE="$1"
+			else
+				log_err "過多參數: $1"
+				show_help
+				exit 1
+			fi
+			;;
+		esac
+		shift
+	done
 
-    if [[ -z "$INPUT_FILE" ]]; then
-        log_err "缺少輸入文件"
-        show_help
-        exit 1
-    fi
+	if [[ -z "$INPUT_FILE" ]]; then
+		log_err "缺少輸入文件"
+		show_help
+		exit 1
+	fi
 
-    if [[ ! -f "$INPUT_FILE" ]]; then
-        log_err "文件不存在: $INPUT_FILE"
-        exit 1
-    fi
+	if [[ ! -f "$INPUT_FILE" ]]; then
+		log_err "文件不存在: $INPUT_FILE"
+		exit 1
+	fi
 }
 
 # ============================================================
 # 檢測文件類型
 # ============================================================
 detect_file_type() {
-    local file="$1"
-    local ext="${file##*.}"
-    case "${ext,,}" in
-        csv)  echo "csv" ;;
-        json) echo "json" ;;
-        *)
-            # 嘗試從內容檢測
-            local first_line
-            first_line=$(head -1 "$file" | tr -d '[:space:]')
-            if [[ "$first_line" == "{"* ]]; then
-                echo "json"
-            else
-                echo "csv"
-            fi
-            ;;
-    esac
+	local file="$1"
+	local ext="${file##*.}"
+	case "${ext,,}" in
+	csv) echo "csv" ;;
+	json) echo "json" ;;
+	*)
+		# 嘗試從內容檢測
+		local first_line
+		first_line=$(head -1 "$file" | tr -d '[:space:]')
+		if [[ "$first_line" == "{"* ]]; then
+			echo "json"
+		else
+			echo "csv"
+		fi
+		;;
+	esac
 }
 
 # ============================================================
 # 從 JSON 配置文件讀取 global 設定
 # ============================================================
 load_config() {
-    local config_file="$1"
-    if [[ ! -f "$config_file" ]]; then
-        log_err "配置文件不存在: $config_file"
-        exit 1
-    fi
+	local config_file="$1"
+	if [[ ! -f "$config_file" ]]; then
+		log_err "配置文件不存在: $config_file"
+		exit 1
+	fi
 
-    local result
-    result=$(python3 -c "
+	local result
+	result=$(python3 -c "
 import json, sys
 with open(sys.argv[1]) as f:
     data = json.load(f)
@@ -210,31 +210,31 @@ print('OUTPUT_DIR=' + json.dumps(g.get('output_dir', '')))
 print('BUILD_TMP_DIR=' + json.dumps(g.get('build_tmp_dir', '')))
 print('SRC_DIR=' + json.dumps(g.get('src_dir', '')))
 " "$config_file" 2>/dev/null) || {
-        log_err "配置文件格式錯誤: $config_file"
-        exit 1
-    }
+		log_err "配置文件格式錯誤: $config_file"
+		exit 1
+	}
 
-    eval "$result"
+	eval "$result"
 
-    # 僅在配置文件有值時覆蓋預設值
-    [[ -n "$PACK_REPO_DIR" && "$PACK_REPO_DIR" != '""' ]] || PACK_REPO_DIR="$DEFAULT_PACK_REPO_DIR"
-    [[ -n "$OUTPUT_DIR" && "$OUTPUT_DIR" != '""' ]] || OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
-    [[ -n "$BUILD_TMP_DIR" && "$BUILD_TMP_DIR" != '""' ]] || BUILD_TMP_DIR="$DEFAULT_BUILD_TMP_DIR"
-    [[ -n "$SRC_DIR" && "$SRC_DIR" != '""' ]] || SRC_DIR="$DEFAULT_SRC_DIR"
+	# 僅在配置文件有值時覆蓋預設值
+	[[ -n "$PACK_REPO_DIR" && "$PACK_REPO_DIR" != '""' ]] || PACK_REPO_DIR="$DEFAULT_PACK_REPO_DIR"
+	[[ -n "$OUTPUT_DIR" && "$OUTPUT_DIR" != '""' ]] || OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
+	[[ -n "$BUILD_TMP_DIR" && "$BUILD_TMP_DIR" != '""' ]] || BUILD_TMP_DIR="$DEFAULT_BUILD_TMP_DIR"
+	[[ -n "$SRC_DIR" && "$SRC_DIR" != '""' ]] || SRC_DIR="$DEFAULT_SRC_DIR"
 }
 
 # ============================================================
 # CSV 轉 JSON (使用 python 確保可靠解析)
 # ============================================================
 csv_to_json() {
-    local csv_file="$1"
-    local pack_repo_dir="$2"
-    local output_dir="$3"
-    local build_tmp_dir="$4"
-    local src_dir="$5"
-    local default_type="$6"
+	local csv_file="$1"
+	local pack_repo_dir="$2"
+	local output_dir="$3"
+	local build_tmp_dir="$4"
+	local src_dir="$5"
+	local default_type="$6"
 
-    python3 -c "
+	python3 -c "
 import csv, json, sys
 
 csv_file = sys.argv[1]
@@ -335,10 +335,10 @@ print(json.dumps(result, indent=2, ensure_ascii=False))
 # 根據任務類型分派到對應的 run_tasks.sh
 # ============================================================
 dispatch_tasks() {
-    local json_file="$1"
+	local json_file="$1"
 
-    local types
-    types=$(python3 -c "
+	local types
+	types=$(python3 -c "
 import json, sys
 with open(sys.argv[1]) as f:
     data = json.load(f)
@@ -347,25 +347,25 @@ types = set(t.get('type', '') for t in tasks)
 print(' '.join(types))
 " "$json_file" 2>/dev/null)
 
-    local has_binary=false
-    local has_source=false
-    for t in $types; do
-        if [[ "$t" == "binary" ]]; then has_binary=true; fi
-        if [[ "$t" == "source" ]]; then has_source=true; fi
-    done
+	local has_binary=false
+	local has_source=false
+	for t in $types; do
+		if [[ "$t" == "binary" ]]; then has_binary=true; fi
+		if [[ "$t" == "source" ]]; then has_source=true; fi
+	done
 
-    if [[ "$has_binary" == true && "$has_source" == false ]]; then
-        log_info "所有任務均為 binary 類型，調用 binary-runner"
-        bash "$BINARY_RUNNER" "$json_file"
-    elif [[ "$has_source" == true && "$has_binary" == false ]]; then
-        log_info "所有任務均為 source 類型，調用 source-updater"
-        bash "$SOURCE_RUNNER" "$json_file"
-    else
-        log_info "檢測到混合類型，拆分後分別調用"
-        local binary_json="/tmp/linyaps_binary_$$.json"
-        local source_json="/tmp/linyaps_source_$$.json"
+	if [[ "$has_binary" == true && "$has_source" == false ]]; then
+		log_info "所有任務均為 binary 類型，調用 binary-runner"
+		bash "$BINARY_RUNNER" "$json_file"
+	elif [[ "$has_source" == true && "$has_binary" == false ]]; then
+		log_info "所有任務均為 source 類型，調用 source-updater"
+		bash "$SOURCE_RUNNER" "$json_file"
+	else
+		log_info "檢測到混合類型，拆分後分別調用"
+		local binary_json="/tmp/linyaps_binary_$$.json"
+		local source_json="/tmp/linyaps_source_$$.json"
 
-        python3 -c "
+		python3 -c "
 import json, sys
 with open(sys.argv[1]) as f:
     data = json.load(f)
@@ -379,94 +379,94 @@ if source_tasks:
         json.dump({'global': data.get('global', {}), 'tasks': source_tasks}, f, indent=2, ensure_ascii=False)
 " "$json_file" "$binary_json" "$source_json"
 
-        if [[ -f "$binary_json" ]]; then
-            log_info "執行 binary 任務..."
-            bash "$BINARY_RUNNER" "$binary_json"
-            rm -f "$binary_json"
-        fi
-        if [[ -f "$source_json" ]]; then
-            log_info "執行 source 任務..."
-            bash "$SOURCE_RUNNER" "$source_json"
-            rm -f "$source_json"
-        fi
-    fi
+		if [[ -f "$binary_json" ]]; then
+			log_info "執行 binary 任務..."
+			bash "$BINARY_RUNNER" "$binary_json"
+			rm -f "$binary_json"
+		fi
+		if [[ -f "$source_json" ]]; then
+			log_info "執行 source 任務..."
+			bash "$SOURCE_RUNNER" "$source_json"
+			rm -f "$source_json"
+		fi
+	fi
 }
 
 # ============================================================
 # 直接傳遞 JSON 任務文件 (向後兼容)
 # ============================================================
 pass_through_json() {
-    local json_file="$1"
-    log_info "檢測到 JSON 格式，直接傳遞給 run_tasks.sh"
-    dispatch_tasks "$json_file"
+	local json_file="$1"
+	log_info "檢測到 JSON 格式，直接傳遞給 run_tasks.sh"
+	dispatch_tasks "$json_file"
 }
 
 # ============================================================
 # 主流程
 # ============================================================
 main() {
-    parse_args "$@"
+	parse_args "$@"
 
-    # 檢測文件類型
-    local file_type
-    file_type=$(detect_file_type "$INPUT_FILE")
-    log_info "文件類型: $file_type"
-    log_info "輸入文件: $INPUT_FILE"
+	# 檢測文件類型
+	local file_type
+	file_type=$(detect_file_type "$INPUT_FILE")
+	log_info "文件類型: $file_type"
+	log_info "輸入文件: $INPUT_FILE"
 
-    # JSON 文件直接傳遞
-    if [[ "$file_type" == "json" ]]; then
-        pass_through_json "$INPUT_FILE"
-        return
-    fi
+	# JSON 文件直接傳遞
+	if [[ "$file_type" == "json" ]]; then
+		pass_through_json "$INPUT_FILE"
+		return
+	fi
 
-    # === CSV 處理流程 ===
+	# === CSV 處理流程 ===
 
-    # 如果指定了配置文件，載入配置
-    if [[ -n "$CONFIG_FILE" ]]; then
-        log_info "載入配置文件: $CONFIG_FILE"
-        load_config "$CONFIG_FILE"
-    fi
+	# 如果指定了配置文件，載入配置
+	if [[ -n "$CONFIG_FILE" ]]; then
+		log_info "載入配置文件: $CONFIG_FILE"
+		load_config "$CONFIG_FILE"
+	fi
 
-    log_info "配置:"
-    log_info "  pack_repo_dir: $PACK_REPO_DIR"
-    log_info "  output_dir:    $OUTPUT_DIR"
-    log_info "  build_tmp_dir: ${BUILD_TMP_DIR:-<自動生成>}"
-    log_info "  src_dir:       $SRC_DIR"
+	log_info "配置:"
+	log_info "  pack_repo_dir: $PACK_REPO_DIR"
+	log_info "  output_dir:    $OUTPUT_DIR"
+	log_info "  build_tmp_dir: ${BUILD_TMP_DIR:-<自動生成>}"
+	log_info "  src_dir:       $SRC_DIR"
 
-    # CSV 轉 JSON
-    log_info "解析 CSV 文件..."
-    local json_content
-    json_content=$(csv_to_json "$INPUT_FILE" "$PACK_REPO_DIR" "$OUTPUT_DIR" "$BUILD_TMP_DIR" "$SRC_DIR" "$DEFAULT_TASK_TYPE") || {
-        log_err "CSV 解析失敗"
-        exit 1
-    }
+	# CSV 轉 JSON
+	log_info "解析 CSV 文件..."
+	local json_content
+	json_content=$(csv_to_json "$INPUT_FILE" "$PACK_REPO_DIR" "$OUTPUT_DIR" "$BUILD_TMP_DIR" "$SRC_DIR" "$DEFAULT_TASK_TYPE") || {
+		log_err "CSV 解析失敗"
+		exit 1
+	}
 
-    # 統計任務數
-    local task_count
-    task_count=$(echo "$json_content" | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('tasks',[])))")
-    log_ok "解析完成，共 $task_count 個任務"
+	# 統計任務數
+	local task_count
+	task_count=$(echo "$json_content" | python3 -c "import json,sys; print(len(json.load(sys.stdin).get('tasks',[])))")
+	log_ok "解析完成，共 $task_count 個任務"
 
-    # 確定輸出文件路徑
-    if [[ -z "$OUTPUT_JSON" ]]; then
-        local timestamp
-        timestamp=$(date +%Y%m%d%H%M%S)
-        OUTPUT_JSON="/tmp/linyaps_tasks_${timestamp}.json"
-    fi
+	# 確定輸出文件路徑
+	if [[ -z "$OUTPUT_JSON" ]]; then
+		local timestamp
+		timestamp=$(date +%Y%m%d%H%M%S)
+		OUTPUT_JSON="/tmp/linyaps_tasks_${timestamp}.json"
+	fi
 
-    # 寫入 JSON 文件
-    echo "$json_content" > "$OUTPUT_JSON"
-    log_ok "已生成 JSON 文件: $OUTPUT_JSON"
+	# 寫入 JSON 文件
+	echo "$json_content" >"$OUTPUT_JSON"
+	log_ok "已生成 JSON 文件: $OUTPUT_JSON"
 
-    # dry-run 模式：僅輸出 JSON 內容
-    if [[ "$DRY_RUN" == "true" ]]; then
-        log_info "=== dry-run 模式：生成的 JSON 內容 ==="
-        echo "$json_content"
-        return
-    fi
+	# dry-run 模式：僅輸出 JSON 內容
+	if [[ "$DRY_RUN" == "true" ]]; then
+		log_info "=== dry-run 模式：生成的 JSON 內容 ==="
+		echo "$json_content"
+		return
+	fi
 
-    # 執行打包任務
-    log_info "調用 run_tasks.sh 執行打包..."
-    dispatch_tasks "$OUTPUT_JSON"
+	# 執行打包任務
+	log_info "調用 run_tasks.sh 執行打包..."
+	dispatch_tasks "$OUTPUT_JSON"
 }
 
 main "$@"

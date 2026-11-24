@@ -18,7 +18,7 @@ runtime: org.deepin.runtime.dtk/25.2.2
 
 sources:
 - kind: archive
-  url: https://share.cicd.getdeepin.org/ziggy-pool/linyaps-apps-packaging-CI/260805-stable.src/vlc-3.0.23-2.tar.gz
+  url: https://example.com/src/vlc-3.0.23-2.tar.gz
   digest: 1a108be0511a0847c95a5ccccce263413db88839636b9cbfd05a173e115f05ae
   name: src
 buildext:
