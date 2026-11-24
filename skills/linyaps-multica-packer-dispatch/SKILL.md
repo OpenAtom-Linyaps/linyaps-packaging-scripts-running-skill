@@ -22,7 +22,7 @@ user-invocable: false
 - 配置来源：`for-multica/agent-config.json` 的 `assignment` 区段
 - 本 skill 脚本：`skills/linyaps-multica-packer-dispatch/scripts/`
 
-**配置接收**：`agent_config_path` 由调用方通过 `skill()` 传入，本 skill 将其映射为 `--config=<path>`（或 `--agent-config-path=<path>`）参数传递给 `dispatch.sh` 脚本。
+**配置接收**：`agent_config_path` 由调用方通过 `skill()` 传入。本 skill 同时必须继承已由 agent handoff 设置并导出的 `MULTICA_ISSUE_TASK_ID`（严格 UUID）；缺失、无效或与当前 issue 不一致均返回 `blocked`，不发送任何 comment/assign/status API 请求。
 
 ## 四种 Action 接口
 
@@ -48,16 +48,12 @@ user-invocable: false
 }
 ```
 
-**消费者**：packer agent 中步骤 7.6（`status_upload.sh` vs `status_upload_initOnly.sh` 选择）
+**消费者**：packer agent 中步骤 7.6（`status_upload.sh` vs `status_upload_initOnly.sh` 选择）。两个上传脚本均启 exec-proof 门禁：binary 任务成功上报必须带 `run_tasks.sh` 生成的 exec-proof（constraints §6），source 任务须显式传 `TASK_TYPE=source`；init-source 任务因属 source 类型而豁免，但仍可用 initOnly 脚本的初始化专用 webhook 端点。
 
-**执行逻辑**：
-1. 通过 `multica issue list --output json --limit 1` 取当前 issue 的精确 `id`（UUID）
-2. 若获取到 ISSUE_ID（UUID），通过 `multica issue comment list "<ISSUE_ID>" --output json` 获取评论
-3. 优先级匹配：`linyaps-init` >> `linyaps-src-init`（binary 场景比例更高）
-   - 评论包含 `linyaps-init` → `IS_INIT_ASSIGNED=true`
-   - 否则包含 `linyaps-src-init` → `SRC_INIT_ASSIGNED=true`
-   - 均不含 → 两者 false
-4. multica CLI 不可用或查询失败 → 两标记均为 false，**不阻断流程**
+1. 从 `MULTICA_ISSUE_TASK_ID` 读取并严格校验当前 issue UUID；禁止使用 `multica issue list --limit 1` 或评论内容推断身份。
+2. 通过 `multica issue comment list "<ISSUE_ID>" --output json` 获取评论并匹配初始化来源。
+3. 优先级匹配：`linyaps-init` >> `linyaps-src-init`。
+4. CLI 查询失败、身份缺失或任务上下文不一致 → `blocked`，不继续后续动作。
 
 ### Action 2: `dispatch_project_not_found`
 
@@ -236,3 +232,9 @@ LLM 修复项目问题后，将修改日志发布为 issue comment。
    - issue / agent / workspace 一律以 multica `--output json` 返回的 `id`（UUID）为唯一标识，禁止 `grep issue-\d+` / `comment-\d+` / `--to <slug>` / `@name` 模糊匹配
    - 指派必须用 `--to-id <agent-uuid>`；@mention 必须用 `[@name](mention://agent/<uuid>)`
    - **agent 一律「按 CLI 真实 name」提取 uuid**（`multica agent list --output json` 的 `name → id`）；config 的 `assignment.agents[].id`（slug/中文）**不**等于 CLI name，slug→CLI name 映射由 Agent（LLM）运行时决策并以 `--agent-name=<CLI name>` 显式传入，**脚本不硬编码映射**
+
+## 输出与日志边界
+
+- `dispatch_project_not_found` 只返回匹配能力、CLI agent name/UUID、agent 状态和 `assigned/reason`；不得输出完整 agent 列表、配置正文或 API 原始响应。
+- `update_issue_status` 只返回 `issue_status` 与 `comment_id`；`post_fix_log` 只读取传入的 `FIX_LOG_PATH` 并返回 `posted`、`pkgName` 和时间戳。
+- CLI 原始响应必须留在脚本内部解析或重定向；构建日志不得通过本 skill 发布，fix-log 之外的文件不得读取。

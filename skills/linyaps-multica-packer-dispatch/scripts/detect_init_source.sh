@@ -46,12 +46,12 @@ if [[ -n "$WORKSPACE" ]]; then
   multica workspace switch "$WORKSPACE" >/dev/null 2>&1 || true
 fi
 
-# 查询当前 issue ID（精确 UUID）
+# Only the immutable handoff identity is valid; never infer from issue lists.
 if ! ISSUE_ID=$(get_issue_id); then
-  echo '{"IS_INIT_ASSIGNED":false,"SRC_INIT_ASSIGNED":false}'
-  exit 0
+  echo '{"blocked":true,"reason":"issue_id_required","IS_INIT_ASSIGNED":false,"SRC_INIT_ASSIGNED":false}'
+  exit 2
 fi
-[[ -z "$ISSUE_ID" ]] && { echo '{"IS_INIT_ASSIGNED":false,"SRC_INIT_ASSIGNED":false}'; exit 0; }
+export MULTICA_ISSUE_TASK_ID="$ISSUE_ID"
 
 # 获取评论内容（multica issue comment list --output json）
 COMMENTS=$(multica issue comment list "$ISSUE_ID" --output json 2>/dev/null || echo "")

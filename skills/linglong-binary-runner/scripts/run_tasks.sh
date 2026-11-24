@@ -29,7 +29,7 @@ source "$SCRIPT_DIR/common.sh"
 
 check_python3
 
-eval "$(parse_json "$TASK_FILE")"
+eval "$(parse_json "$TASK_FILE" "$CONFIG_FILE")"
 
 if [[ -z "$PACK_REPO_DIR" || "$PACK_REPO_DIR" == '""' ]]; then
     log_err "JSON 中缺少 global.pack_repo_dir"
@@ -57,6 +57,60 @@ init_directories
 SUCCESS_COUNT=0
 FAIL_COUNT=0
 declare -a RESULTS=()
+# write_exec_proof — 寫入 binary 構建執行憑證（constraints §6）
+# 参数:
+#   $1  out_dir    — 輸出目錄
+#   $2  pkg_name   — 包名
+#   $3  arch       — 架構
+#   $4  build_cmd  — 實際執行的完整命令行
+#   $5  exit_code  — 構建退出碼
+#   $6  started_at — 開始時間（ISO8601）
+#   $7  finished_at — 結束時間（ISO8601）
+#   $8...         — layer 文件路徑（一個或多個）
+write_exec_proof() {
+    local out_dir="$1" pkg_name="$2" arch="$3" build_cmd="$4" exit_code="$5" started_at="$6" finished_at="$7"
+    shift 7
+
+    local proof="$out_dir/${pkg_name}.exec-proof.json"
+    local -a layer_entries=()
+    local layer_file digest entry
+    for layer_file in "$@"; do
+        [[ -f "$layer_file" ]] || continue
+        digest="$(sha256sum "$layer_file" | cut -d' ' -f1)"
+        entry="$(python3 -c 'import json,sys;print(json.dumps({"file":sys.argv[1],"sha256":sys.argv[2]}))' "$(basename "$layer_file")" "$digest")"
+        layer_entries+=("$entry")
+    done
+
+    local cmd_json
+    cmd_json="$(python3 -c 'import json,sys;print(json.dumps(sys.argv[1]))' "$build_cmd")"
+    {
+        echo "{"
+        echo "  \"pkg_name\": \"${pkg_name}\","
+        echo "  \"task_type\": \"binary\","
+        echo "  \"command\": ${cmd_json},"
+        echo "  \"exit_code\": ${exit_code},"
+        echo "  \"started_at\": \"${started_at}\","
+        echo "  \"finished_at\": \"${finished_at}\","
+        echo "  \"layers\": [$(IFS=,; echo "${layer_entries[*]}")]"
+        echo "}"
+    } > "$proof"
+    echo "exec-proof written: $proof"
+}
+
+# _report_status — 調用 status_upload.sh 上傳產物並回報狀態（report skill）
+# 參數:
+#   $1  filepath  — layer 文件路徑；"null" 表示無產物（失敗/阻塞）
+#   $2  status    — pakStatus 值：non-verified / failed / upload-failed
+#   $3  pkg_name  — 包名
+#   $4  arch      — 架構
+#   $5  orig_ver  — 上游版本號
+_report_status() {
+    local filepath="$1" status="$2" pkg_name="$3" arch="$4" orig_ver="$5"
+    export TASK_TYPE=binary
+    bash "$REPO_ROOT/skills/linyaps-packaging-report/scripts/status_upload.sh" \
+        "$filepath" "$orig_ver" "$status" "$pkg_name" "$arch" \
+        || echo "warn: status_upload.sh failed for $pkg_name (exit $?)"
+}
 
 run_task() {
     local idx="$1"
@@ -87,7 +141,7 @@ run_task() {
             log_err "無法從 URL 提取版本號: $src_url"
             FAIL_COUNT=$((FAIL_COUNT + 1))
             RESULTS+=("$pkg_name: 失敗 (無法提取版本號)")
-            return
+            _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
         fi
     fi
 
@@ -95,14 +149,14 @@ run_task() {
         log_err "架構不匹配，跳過任務 $pkg_name"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (架構不匹配: URL 架構 vs 宣告 arch=${arch})")
-        return
+        _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
     fi
 
     local src_path
     src_path=$(download_source "$src_url" "$SRC_DIR" "$pkg_name") || {
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (下載失敗)")
-        return
+        _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
     }
 
     local project_dir
@@ -110,15 +164,20 @@ run_task() {
         log_err "找不到項目目錄: $pkg_name (在 $PACK_REPO_DIR 下)"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (找不到項目目錄)")
-        return
+        _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
     }
     log_ok "項目目錄: $project_dir"
 
     local pak_script="$project_dir/pak_linyaps.sh"
     chmod +x "$pak_script"
 
-    local task_build_tmp_dir="${BUILD_TMP_DIR}/${pkg_name}"
-    mkdir -p "$task_build_tmp_dir"
+    local task_build_tmp_dir
+    if ! task_build_tmp_dir=$(mktemp -d -p "$BUILD_TMP_DIR"); then
+        log_err "無法建立任務緩存目錄（根目錄: $BUILD_TMP_DIR）"
+        FAIL_COUNT=$((FAIL_COUNT + 1))
+        RESULTS+=("$pkg_name: 失敗 (無法建立任務緩存目錄)")
+        _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
+    fi
     log_info "任務緩存目錄: $task_build_tmp_dir"
 
     local build_tmp_arg=""
@@ -146,6 +205,8 @@ run_task() {
     local log_file="$OUTPUT_DIR/${pkg_name}.log"
     local start_time
     start_time=$(date +%s)
+    local started_at_iso
+    started_at_iso="$(date -Is)"
 
     if (
         cd "$project_dir" && build_with_retry "$pkg_name 打包（binary）" "$MAX_BUILD_ATTEMPTS" "$BUILD_TIMEOUT_SEC" "${cmd[@]}"
@@ -157,20 +218,41 @@ run_task() {
         log_info "最後輸出:"
         tail -5 "$log_file" | sed 's/^/  /'
 
-        # 檢查並投遞修改日志
+        # A fix log is publishable only when bound to the immutable task issue.
         local fix_log_path="${DATA_DIR}/${pkg_name}.fix-log.md"
         if [[ -f "$fix_log_path" ]]; then
+            if [[ -z "${MULTICA_ISSUE_TASK_ID:-}" ]]; then
+                log_err "blocked: issue_id_required; refusing unbound fix-log comment"
+                FAIL_COUNT=$((FAIL_COUNT + 1))
+                RESULTS+=("$pkg_name: 阻塞 (缺少任务 issue ID)")
+                _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
+            fi
             log_info "檢測到修改日志，發布到 issue..."
-            bash "$REPO_ROOT/skills/linyaps-multica-packer-dispatch/scripts/dispatch.sh" \
-                post_fix_log \
-                --pkgName="$pkg_name" \
-                --fix-log-path="$fix_log_path" \
-                ${DATA_DIR:+--data-dir="$DATA_DIR"} \
-                2>/dev/null || log_warn "發布修改日志失敗（不阻斷）"
+            bash "$REPO_ROOT/skills/linyaps-multica-packer-dispatch/scripts/dispatch.sh" post_fix_log --pkgName="$pkg_name" --fix-log-path="$fix_log_path" ${DATA_DIR:+--data-dir="$DATA_DIR"} || {
+                log_err "blocked: fix-log publication failed"
+                _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
+            }
         fi
 
-        SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
-        RESULTS+=("$pkg_name: 成功 (${elapsed}s)")
+        # exec-proof（constraints §6）：成功路徑寫入執行憑證，供 status_upload.sh 門禁校驗
+        local build_cmd_str finished_at_iso
+        finished_at_iso="$(date -Is)"
+        build_cmd_str="$(printf '%q ' "${cmd[@]}")"
+        local -a proof_layers=()
+        local layer_glob
+        for layer_glob in "$OUTPUT_DIR/${pkg_name}_"*"_binary.layer"; do
+            [[ -f "$layer_glob" ]] && proof_layers+=("$layer_glob")
+        done
+        write_exec_proof "$OUTPUT_DIR" "$pkg_name" "$arch" "$build_cmd_str" 0 "$started_at_iso" "$finished_at_iso" ${proof_layers[@]+"${proof_layers[@]}"} \
+            || echo "warn: failed to write exec-proof for $pkg_name (gate will block upload)"
+
+        # ── 上傳至 S3 並回報狀態（report skill）─────────────────
+        if [[ ${#proof_layers[@]} -gt 0 ]]; then
+            _report_status "${proof_layers[0]}" "non-verified" "$pkg_name" "$arch" "$orig_version"
+        else
+            echo "warn: no layer file found for $pkg_name, reporting failed"
+            _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
+        fi
     else
         local end_time
         end_time=$(date +%s)
@@ -179,7 +261,7 @@ run_task() {
         log_err "錯誤輸出:"
         tail -10 "$log_file" | sed 's/^/  /'
         FAIL_COUNT=$((FAIL_COUNT + 1))
-        RESULTS+=("$pkg_name: 失敗 (詳見 $log_file)")
+        _report_status "null" "failed" "$pkg_name" "$arch" "$orig_version"
     fi
     echo ""
 }

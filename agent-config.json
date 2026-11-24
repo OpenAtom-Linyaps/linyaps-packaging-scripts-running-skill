@@ -2,8 +2,8 @@
   "global": {
     "pack_repo_dir": "/data/linyaps-projects",
     "projects_repo": "",
-    "output_dir": "./output/${tag}",
-    "data_dir": "./data/${tag}.log",
+    "output_dir": "./output",
+    "data_dir": "./data",
     "build_tmp_dir": "./build_cache",
     "src_dir": "./src",
     "storage": {

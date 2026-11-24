@@ -33,7 +33,7 @@ source "$SCRIPT_DIR/common.sh"
 
 check_python3
 
-eval "$(parse_json "$TASK_FILE")"
+eval "$(parse_json "$TASK_FILE" "$CONFIG_FILE")"
 
 if [[ -z "$PACK_REPO_DIR" || "$PACK_REPO_DIR" == '""' ]]; then
     log_err "JSON 中缺少 global.pack_repo_dir"
@@ -136,11 +136,16 @@ run_source_task() {
 
     local start_time
     start_time=$(date +%s)
+    mkdir -p "$OUTPUT_DIR"
     local log_file="$OUTPUT_DIR/${pkg_name}.source.log"
 
-    # 註：本腳本已棄用。緩存復用遵循「固定 pack_repo_dir + 不刪項目目錄」設計，
-    # 不再建立 build_tmp_dir/<pkgName> 獨立緩存子目錄；構建工作鎖見 common.sh 的
-    # acquire_build_lock / release_build_lock（由 LLM 驅動工作流調用）。
+    # Build/export 正文始终保留在独立 attempt 日志；stdout 只返回有界诊断。
+    summarize_log() {
+        local path="$1" limit="${2:-100}"
+        [[ -f "$path" ]] || { echo "log_path=$path"; return; }
+        echo "log_path=$path"
+        tail -n "$limit" "$path" | sed 's/^/  /'
+    }
 
     log_info "Step S-1: 驗證輸入 linglong.yaml..."
     if python3 "$SCRIPT_DIR/validate-linglong-yaml.py" "$project_dir/linglong.yaml" >> "$log_file" 2>&1; then
@@ -207,23 +212,21 @@ run_source_task() {
     local build_attempt=1
     local state_file="${TMPDIR:-/tmp}/ll-build-${pkg_name}.state"
 
-    # run_monitored_build — 用 monitor-build.sh 後台啟動 + wait，避免前台長構建
-    # $1=state, $2=log(總日誌), $3=timeout; 其餘為命令
-    # 構建輸出先寫入 <log>.build，完成後追加到總日誌，保留原始 >> 語義。
     run_monitored_build() {
-        local st="$1" lg="$2" to="$3"; shift 3
-        local blg="${lg}.build"
+        local st="$1" lg="$2" to="$3" phase="$4" attempt="$5"; shift 5
+        local blg="${lg}.${phase}.attempt-${attempt}.log"
+        rm -f "$blg"
         (cd "$project_dir" && bash "$SCRIPT_DIR/monitor-build.sh" start "$st" --timeout "$to" --log "$blg" -- "$@" >/dev/null 2>&1)
         local rc
-        bash "$SCRIPT_DIR/monitor-build.sh" wait "$st" --timeout "$to"
-        rc=$?
-        cat "$blg" >> "$lg" 2>/dev/null || true
+        if bash "$SCRIPT_DIR/monitor-build.sh" wait "$st" --timeout "$to"; then rc=0; else rc=$?; fi
+        echo "phase=$phase attempt=$attempt exit_code=$rc log_path=$blg" >> "$lg"
+        [[ "$rc" -eq 0 ]] || summarize_log "$blg" 100 >> "$lg"
         return "$rc"
     }
 
     while [[ $build_attempt -le $MAX_BUILD_ATTEMPTS ]]; do
         log_info "Step S-5: ll-builder build 開始（第 ${build_attempt}/${MAX_BUILD_ATTEMPTS} 次）..."
-        if run_monitored_build "$state_file" "$log_file" "$BUILD_TIMEOUT_SEC" ll-builder build --skip-output-check; then
+        if run_monitored_build "$state_file" "$log_file" "$BUILD_TIMEOUT_SEC" build "$build_attempt" ll-builder build --skip-output-check; then
             log_ok "ll-builder build 成功"
         else
             local build_exit=$?
@@ -243,8 +246,7 @@ run_source_task() {
             break
         fi
 
-        log_info "Step S-6: ll-builder export 開始（第 ${build_attempt}/${MAX_BUILD_ATTEMPTS} 次）..."
-        if run_monitored_build "$state_file" "$log_file" "$BUILD_TIMEOUT_SEC" ll-builder export --layer --no-develop -z zstd; then
+        if run_monitored_build "$state_file" "$log_file" "$BUILD_TIMEOUT_SEC" export "$build_attempt" ll-builder export --layer --no-develop -z zstd; then
             log_ok "ll-builder export 成功"
             build_phase_ok=true
             break
@@ -295,16 +297,18 @@ run_source_task() {
     local elapsed=$((end_time - start_time))
     log_ok "$pkg_name 打包成功 (耗時 ${elapsed}s)"
 
-    # 檢查並投遞修改日志
+    # Fix-log comments require the immutable task issue context.
     local fix_log_path="${DATA_DIR}/${pkg_name}.fix-log.md"
     if [[ -f "$fix_log_path" ]]; then
+        if [[ -z "${MULTICA_ISSUE_TASK_ID:-}" ]]; then
+            log_err "blocked: issue_id_required; refusing unbound fix-log comment"
+            FAIL_COUNT=$((FAIL_COUNT + 1)); RESULTS+=("$pkg_name: 阻塞 (缺少任务 issue ID)"); return
+        fi
         log_info "檢測到修改日志，發布到 issue..."
-        bash "$REPO_ROOT/skills/linyaps-multica-packer-dispatch/scripts/dispatch.sh" \
-            post_fix_log \
-            --pkgName="$pkg_name" \
-            --fix-log-path="$fix_log_path" \
-            ${DATA_DIR:+--data-dir="$DATA_DIR"} \
-            2>/dev/null || log_warn "發布修改日志失敗（不阻斷）"
+        bash "$REPO_ROOT/skills/linyaps-multica-packer-dispatch/scripts/dispatch.sh" post_fix_log --pkgName="$pkg_name" --fix-log-path="$fix_log_path" ${DATA_DIR:+--data-dir="$DATA_DIR"} || {
+            log_err "blocked: fix-log publication failed"
+            FAIL_COUNT=$((FAIL_COUNT + 1)); RESULTS+=("$pkg_name: 阻塞 (修改日志未绑定发布)"); return
+        }
     fi
 
     SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
