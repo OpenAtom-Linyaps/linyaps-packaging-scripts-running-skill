@@ -20,12 +20,13 @@ permission:
 # linyaps 打包任務執行器（Agent）
 
 > **`@MAX_BUILD_ATTEMPTS@` 和 `@BUILD_TIMEOUT_SEC@` 变量声明（单点修改）**
-> 构建任务的重试次数和超时时间由此两个变量全局控制：
+> 构建任务的重试次数和首轮等待窗口由此两个变量全局控制：
 > - `@MAX_BUILD_ATTEMPTS@` = `2` — 每个构建任务最大构建次数（含首次和一次失败重试）
-> - `@BUILD_TIMEOUT_SEC@` = `1800` — 单次构建超时秒数，即 30 分钟
+> - `@BUILD_TIMEOUT_SEC@` = `1800` — 单次构建首轮等待窗口秒数，即 30 分钟
 >
-> **替换规则**：在 bash 脚本中必须使用 `timeout @BUILD_TIMEOUT_SEC@` 包裹构建命令，
-> 失败时自动重试（不超过 `@MAX_BUILD_ATTEMPTS@` 次），重试间隔 10 秒。
+> **替换规则**：在 bash 脚本中使用 `timeout @BUILD_TIMEOUT_SEC@` 包裹构建命令作为首轮窗口，
+> 窗口到期后**必须**调用 `scripts/check-build-active.sh` 判断构建是否仍在进行，
+> 仍有构建进程则继续等待（不判超时），失败时自动重试（不超过 `@MAX_BUILD_ATTEMPTS@` 次），重试间隔 10 秒。
 
 根據用戶提供的 JSON 或 CSV 任務文件，按 `tasks[].type` 分派到對應的子 SKILL 執行打包。
 
@@ -38,7 +39,7 @@ permission:
 ```json
 {
   "global": {
-    "projects_root": "/path/to/projects",
+    "pack_repo_dir": "/path/to/projects",
     "projects_repo": "",
     "output_dir": "./output/${tag}",
     "data_dir": "./data/${tag}.log",
@@ -59,8 +60,8 @@ permission:
 
 | 欄位 | 用途 | 預設值 |
 |------|------|--------|
-| `projects_root` | 打包腳本項目根目錄 | `./projects` |
-| `projects_repo` | Git 倉庫 URL（自動 clone/pull） | 空字串 |
+| `pack_repo_dir` | 打包腳本項目根目錄 | `./projects` |
+| `projects_repo` | Git 倉庫 URL（非空時每次任務先安全同步 `pack_repo_dir`） | 空字串 |
 | `output_dir` | 產出目錄，支援 `${tag}` 佔位符 | `./output/${tag}` |
 | `data_dir` | 數據記錄目錄 | `./data/${tag}.log` |
 | `build_tmp_dir` | 構建緩存目錄 | `./build_cache` |
@@ -107,6 +108,7 @@ skills/
 |-------|------|------|
 | linglong-binary-runner | `skills/linglong-binary-runner/` | 二進制打包（`pak_linyaps.sh`） |
 | linglong-source-updater | `skills/linglong-source-updater/` | 源碼編譯打包（`ll-builder`） |
+| linyaps-packaging.constraints | `skills/linyaps-packaging.constraints/` | 統一約束唯一權威（Phase 1 一次載入） |
 
 ## 工作流程
 
@@ -138,12 +140,45 @@ result = skill("linyaps-packaging-precheck", {
 #### 1.3 上游信息查詢（如需要）
 
 若任務缺少 `src_url`/`arch`/`orig_version`，使用 `skills/linyaps-packaging-precheck/scripts/query_upstream.sh` 補全。
+- **提示詞已有的 `src_url`/`orig_version` 為第一候選**：API 返回不得覆蓋已存在字段，僅填充缺失字段。
+- 字段齊全時直接跳過 query；已存在字段被 API 返回不同值時僅記錄 warning，不更新 task（對齊 Issue-61 原則）。
 
 #### 1.3 前置驗證
 
 對 binary 類型任務，使用 `validate_projects.sh` 檢查 `pak_linyaps.sh` 存在且可執行。
 
 對 source 類型任務，使用 `validate-linglong-yaml.py` 檢查 `linglong.yaml` 格式。
+
+#### 1.4 同步 `pack_repo_dir` 打包腳本倉庫
+
+在進入分派執行前，對 `pack_repo_dir` 進行安全同步（僅當 `projects_repo` 非空時）：
+
+```
+source scripts/common.sh
+sync_projects_root "<projects_repo>" "<pack_repo_dir>" || exit 1
+```
+
+`sync_projects_root` 流程（`scripts/common.sh`）：
+
+- 目錄不存在 → `git clone <projects_repo> <pack_repo_dir>`；clone 失敗 → 返回 1，終止流程。
+- 目錄已存在 → `git fetch origin`，判斷本地是否落後上游：
+  - 已最新 → 跳過（零開銷）。
+  - 落後 → `git stash push -u`（含未跟踪構建產物，如 `linglong.yaml`/`config/`）→ `git rebase --autostash origin/<branch>` → `git stash pop` 恢復本地改動。
+- rebase 或 stash pop 衝突 → `git rebase --abort`，本地改動保留不丟失，返回 1 **阻斷本次流程**。
+- `git fetch` 因網絡失敗 → 保留現有快取版本繼續（不阻斷）。
+
+> **時效性說明**：`pack_repo_dir` 為固定絕對共享目錄（跨 issue 保留），每次任務觸發都執行安全同步以復用構建緩存並保持腳本最新。
+
+#### 1.5 載入統一約束 SKILL（僅一次）
+
+在 Phase 1 末尾載入唯一約束來源，後續所有步驟引用約束時指向本 SKILL，不重複展開：
+
+```
+result = skill("linyaps-packaging.constraints", {})
+```
+
+> 統一約束（`${PREFIX}` 安裝目錄、構建重試/超時、項目目錄持久化、路徑解析、修改日誌）以
+> `skills/linyaps-packaging.constraints/SKILL.md` 為唯一權威，正文不再重複明列。
 
 ### Phase 2: 分派執行
 
@@ -173,6 +208,7 @@ for task_type, task_list in tasks_by_type.items():
 - 合併各子 SKILL 的執行結果
 - 分類統計：成功數 / 失敗數 / 待初始化數（binary 項目找不到）/ 待源码初始化數（source 項目找不到）
 - 執行 `skills/linyaps-packaging-report/scripts/status_upload.sh` 上報狀態（若為初始化後首次打包，依來源類型使用 `status_upload_initOnly.sh`）
+- **（issue-63 護欄）** 只要打包成功，**必須立即、無條件**執行產物上傳+狀態回報；**禁止**以「已上傳過 / 無需重建 / 緩存命中 / 層已在 S3」為由跳過。**上傳與 webhook 回報未確認完成，不得進入下一任務或結束流程**。上傳/回報失敗時記錄狀態 `upload-failed` 並顯式警告，不得靜默當作成功完成
 - 輸出最終統計
 
 ## 約束
@@ -184,22 +220,25 @@ for task_type, task_list in tasks_by_type.items():
 ### source 類型約束
 - 使用 `ll-builder build` + `ll-builder export`，不依賴 `pak_linyaps.sh`
 - 輸入的 `linglong.yaml` 必須先通過 validate 檢測
+- **Issue-60 防護（本轮产物）**：構建**只復用 ll-builder 依賴緩存**；`linglong.yaml` 的 `version`/`sources` 與 `.layer` 產物均須為**本輪**，不得把上一輪遺留產物作為本輪結果。`orig_version` 為空/提取失敗 → **阻塞**，不得沿襲歷史 `version`；`package.version` 必用本輪 `orig_version` 強覆蓋，`sources[].digest` 必為本輪下載計算值；產物 `.layer` 僅取本輪 `export` 生成者（mtime 晚於本輪構建開始）。
 
 ### ${PREFIX} 安裝目錄約束
-- 所有構建工具的安裝目錄參數必須使用 `${PREFIX}`，禁止硬編碼 `/usr` 或 `/usr/local`
-- 常見錯誤寫法：
-  - `--prefix=/usr`、`--libdir=/usr/lib`、`--bindir=/usr/bin`、`--includedir=/usr/include`
-  - `-DCMAKE_INSTALL_PREFIX=/usr`、`-DCMAKE_INSTALL_LIBDIR=/usr/lib`、`-DCMAKE_INSTALL_BINDIR=/usr/bin`
-  - `PREFIX=/usr/local`、`QMAKE_INSTALL_PREFIX=/usr`
-- 正確寫法：`-DCMAKE_INSTALL_PREFIX=${PREFIX}`、`--prefix=${PREFIX}`、`PREFIX=${PREFIX}`
-- 輸出校驗階段通過 `validate-linglong-yaml.py` 的 `--allow-sources` 模式檢測
+- 詳見統一約束 SKILL（`skills/linyaps-packaging.constraints/SKILL.md` 第 1 節），此處不再重複列表。所有安裝路徑用 `${PREFIX}`，禁止硬編碼 `/usr` / `/usr/local`。
 
 ### 通用約束
 - 所有腳本調用使用相對於 workspace 根目錄的路徑，不使用 `cd` 切換後執行
 - 多架構版本不一致時，優先使用 x86_64 架構的版本
 - 下載資源時處理重定向 URL
 - 資源已存在時跳過重複下載
+- 操作 `pack_repo_dir` 內項目前，必須先同步該打包腳本倉庫；同步時先 `stash -u` 暫存本地一切改動（含未跟踪文件），rebase 後再恢復
+- `projects_repo` 非空時，分派前必須執行 `sync_projects_root`；rebase / stash 衝突時返回非 0 並**阻斷流程**，禁止強行繼續操作過期快取
 
 ### 構建約束（由 `@MAX_BUILD_ATTEMPTS@` / `@BUILD_TIMEOUT_SEC@` 控制）
-- **重試次數限制**：每個構建任務最大執行 `@MAX_BUILD_ATTEMPTS@` 次（含首次），首次失敗後允許重試 1 次，重試間隔 10 秒
-- **超時限制**：單次構建超過 `@BUILD_TIMEOUT_SEC@` 秒（30 分鐘）即強制終止，計為超時失敗
+- 詳見統一約束 SKILL（`skills/linyaps-packaging.constraints/SKILL.md` 第 2 節）：重試不超過
+  `@MAX_BUILD_ATTEMPTS@` 次、首輪窗口 `@BUILD_TIMEOUT_SEC@`、進度檢測優先於 timeout、
+  apt 異常不得繞過。此處不再重複。
+
+## 修改日志约束
+
+- 詳見統一約束 SKILL（`skills/linyaps-packaging.constraints/SKILL.md` 第 5 節）。
+- 修改日志暫存於 `data_dir/<pkgName>.fix-log.md`；非 multica 場景下僅在最終輸出摘要中展示。

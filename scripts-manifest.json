@@ -13,13 +13,13 @@
       "name": "linglong-binary-runner",
       "path": "skills/linglong-binary-runner/",
       "shared_scripts": ["common.sh"],
-      "private_scripts": ["run_tasks.sh", "validate_projects.sh"]
+      "private_scripts": ["run_tasks.sh", "validate_projects.sh", "check-build-active.sh"]
     },
     {
       "name": "linglong-source-updater",
       "path": "skills/linglong-source-updater/",
       "shared_scripts": ["common.sh"],
-      "private_scripts": ["run_tasks.sh", "download-and-checksum.sh", "update-linglong-yaml.py", "validate-linglong-yaml.py"]
+      "private_scripts": ["run_tasks.sh", "download-and-checksum.sh", "update-linglong-yaml.py", "validate-linglong-yaml.py", "check-build-active.sh"]
     },
     {
       "name": "linyaps-multica-packer-dispatch",

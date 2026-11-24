@@ -36,6 +36,88 @@ check_python3() {
     fi
 }
 
+# ---- multica 精确 UUID 解析基元 ----
+# 本仓库要求 issue / agent / workspace 一律以 multica 返回的精确 UUID 管理，
+# 禁止 grep issue-\d+ / comment-\d+ / --to <slug> 等字符串/模糊匹配。
+
+UUID_RE='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+
+# is_uuid <val> — 校验是否为精确 UUID
+is_uuid() {
+    [[ "${1:-}" =~ ^${UUID_RE}$ ]]
+}
+
+# get_issue_id — 当前 workspace 最新的 issue UUID id
+# 返回码: 0=成功 1=无 issue 2=CLI 异常 3=无效 uuid；成功时输出 uuid
+get_issue_id() {
+    local out id
+    out=$(multica issue list --output json --limit 1 2>/dev/null) || return 2
+    [[ -z "$out" ]] && return 1
+    id=$(python3 -c "import json,sys
+d=json.load(sys.stdin)
+print(d['issues'][0]['id'] if d.get('issues') else '')" <<<"$out") 2>/dev/null || return 2
+    [[ -z "$id" ]] && return 1
+    if ! is_uuid "$id"; then log_warn "[multica] invalid_uuid: $id"; return 3; fi
+    echo "$id"
+    return 0
+}
+
+# get_agent_uuid_by_name <CLI 真实 agent name> — 按 CLI 真实 name 提取 agent uuid
+# 返回码: 0=成功 1=name/列表为空 2=CLI 异常 3=未匹配 4=无效 uuid；成功时输出 uuid
+get_agent_uuid_by_name() {
+    local name="$1" out id
+    [[ -z "$name" ]] && return 1
+    out=$(multica agent list --output json 2>/dev/null) || return 2
+    [[ -z "$out" ]] && return 1
+    id=$(python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+L=d if isinstance(d,list) else d.get('agents', d.get('items', []))
+for a in L:
+    if a.get('name')==sys.argv[1]:
+        print(a['id']); sys.exit(0)
+sys.exit(1)" "$name" <<<"$out") 2>/dev/null || return 3
+    if ! is_uuid "$id"; then log_warn "[multica] invalid_uuid: $id"; return 4; fi
+    echo "$id"
+    return 0
+}
+
+# get_comment_id <issue_id> <content> — add comment 并提取 comment uuid
+# 返回码: 0=成功 1=参数/评论为空 2=CLI 异常 3=无效 uuid；成功时输出 comment uuid
+get_comment_id() {
+    local issue_id="$1" content="$2" out id
+    if [[ -z "$issue_id" || -z "$content" ]]; then return 1; fi
+    out=$(multica issue comment add "$issue_id" --content "$content" --output json 2>/dev/null) || return 2
+    [[ -z "$out" ]] && return 1
+    id=$(python3 -c "import json,sys
+d=json.load(sys.stdin)
+print(d.get('id','') if isinstance(d,dict) else '')" <<<"$out") 2>/dev/null || return 2
+    [[ -z "$id" ]] && return 1
+    if ! is_uuid "$id"; then log_warn "[multica] invalid_comment_uuid: $id"; return 3; fi
+    echo "$id"
+    return 0
+}
+
+# get_workspace_id <slug> — 按 slug 解析 workspace uuid
+# 返回码: 0=成功 1=空 2=CLI 异常 3=未匹配 4=无效 uuid；成功时输出 uuid
+get_workspace_id() {
+    local slug="$1" out id
+    [[ -z "$slug" ]] && return 1
+    out=$(multica workspace list --output json 2>/dev/null) || return 2
+    [[ -z "$out" ]] && return 1
+    id=$(python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+L=d if isinstance(d,list) else d.get('workspaces', d.get('items', []))
+for w in L:
+    if w.get('slug')==sys.argv[1]:
+        print(w['id']); sys.exit(0)
+sys.exit(1)" "$slug" <<<"$out") 2>/dev/null || return 3
+    if ! is_uuid "$id"; then log_warn "[multica] invalid_workspace_uuid: $id"; return 4; fi
+    echo "$id"
+    return 0
+}
+
 parse_json() {
     python3 -c "
 import json, sys
@@ -43,7 +125,8 @@ with open(sys.argv[1]) as f:
     data = json.load(f)
 
 g = data.get('global', {})
-print('PROJECTS_ROOT=' + json.dumps(g.get('projects_root', '')))
+print('PACK_REPO_DIR=' + json.dumps(g.get('pack_repo_dir', '')))
+print('PROJECTS_REPO=' + json.dumps(g.get('projects_repo', '')))
 print('OUTPUT_DIR=' + json.dumps(g.get('output_dir', './output')))
 print('BUILD_TMP_DIR=' + json.dumps(g.get('build_tmp_dir', '')))
 print('SRC_DIR=' + json.dumps(g.get('src_dir', './src')))
@@ -260,6 +343,66 @@ supports_build_tmp_dir() {
     grep -q 'build_tmp_dir' "$script_path" 2>/dev/null
 }
 
+# sync_projects_root — 安全同步 pack_repo_dir 打包脚本仓库（fetch + stash -u + rebase + stash pop）
+# 参数:
+#   $1  repo_url       — Git 仓库 URL（projects_repo）
+#   $2  root           — 目标目录（pack_repo_dir）
+# 返回:
+#   0  成功 / 无需同步 / 未配置 repo
+#   1  clone 或 rebase / stash 冲突，需阻断流程（本地改动保留在 stash / 工作区，不丢失）
+sync_projects_root() {
+    local repo_url="$1"
+    local root="$2"
+
+    if [[ -z "$repo_url" ]]; then
+        log_warn "未配置 projects_repo，跳过同步"
+        return 0
+    fi
+
+    if [[ ! -e "$root/.git" ]]; then
+        log_info "克隆打包脚本仓库: $repo_url"
+        if ! git clone "$repo_url" "$root" 2>&1; then
+            log_err "克隆失败: $repo_url"
+            return 1
+        fi
+        return 0
+    fi
+
+    if ! git -C "$root" fetch origin 2>&1; then
+        log_warn "git fetch 失败，保留现有快取继续"
+        return 0
+    fi
+
+    local branch behind
+    branch=$(git -C "$root" rev-parse --abbrev-ref HEAD)
+    behind=$(git -C "$root" rev-list --count "HEAD..origin/$branch" 2>/dev/null || echo 0)
+    if [[ "$behind" == "0" ]]; then
+        log_ok "pack_repo_dir 已是最新"
+        return 0
+    fi
+
+    log_info "本地落后上游 $behind 个提交，开始安全同步"
+
+    if git -C "$root" stash push -u -m "linyaps-presync" >/dev/null 2>&1; then
+        if ! git -C "$root" rebase --autostash "origin/$branch" 2>&1; then
+            git -C "$root" rebase --abort >/dev/null 2>&1
+            log_err "rebase 冲突，已中止，本地改动保留在 stash，阻断本次任务"
+            return 1
+        fi
+        if ! git -C "$root" stash pop 2>&1; then
+            log_err "stash 恢复冲突，本地改动保留在工作区，阻断本次任务"
+            return 1
+        fi
+    else
+        if ! git -C "$root" rebase --autostash "origin/$branch" 2>&1; then
+            git -C "$root" rebase --abort >/dev/null 2>&1
+            log_err "rebase 冲突，已中止，阻断本次任务"
+            return 1
+        fi
+    fi
+    return 0
+}
+
 find_project_dir() {
     local pkg_name="$1"
     local root="$2"
@@ -277,11 +420,14 @@ find_project_dir() {
     fi
 
     local found
-    found=$(find "$root" -maxdepth 2 -type d -name "*${pkg_name}*" 2>/dev/null | head -1)
-    if [[ -n "$found" && -f "$found/pak_linyaps.sh" ]]; then
-        echo "$found"
-        return
-    fi
+    found=$(
+        find "$root" -maxdepth 2 -type d \( -name "CI_ll_${pkg_name}" -o -name "$pkg_name" \) 2>/dev/null | while read -r d; do
+            local base="${d##*/}"
+            [[ "$base" == "CI_ll_${pkg_name}" || "$base" == "$pkg_name" ]] || continue
+            [[ -f "$d/pak_linyaps.sh" ]] && echo "$d"
+        done
+    )
+    found=$(printf '%s\n' "$found" | sort -u | head -1)
 
     return 1
 }
@@ -303,11 +449,14 @@ find_source_project_dir() {
     fi
 
     local found
-    found=$(find "$root" -maxdepth 2 -type d -name "*${pkg_name}*" 2>/dev/null | head -1)
-    if [[ -n "$found" && -f "$found/linglong.yaml" ]]; then
-        echo "$found"
-        return
-    fi
+    found=$(
+        find "$root" -maxdepth 2 -type d \( -name "CI_ll_${pkg_name}" -o -name "$pkg_name" \) 2>/dev/null | while read -r d; do
+            local base="${d##*/}"
+            [[ "$base" == "CI_ll_${pkg_name}" || "$base" == "$pkg_name" ]] || continue
+            [[ -f "$d/linglong.yaml" ]] && echo "$d"
+        done
+    )
+    found=$(printf '%s\n' "$found" | sort -u | head -1)
 
     return 1
 }

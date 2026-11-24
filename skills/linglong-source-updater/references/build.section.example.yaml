@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: 2023 UnionTech Software Technology Co., Ltd.
+#
+# SPDX-License-Identifier: LGPL-3.0-or-later
+
+version: "0.288.1.1"
+
+package:
+  id: "org.mamedev.mamedev"
+  name: "mame"
+  version: "0.288.1.1"
+  kind: app
+  architecture: x86_64
+  description: "Multiple Arcade Machine Emulator (MAME)"
+
+build: |
+  export SRC_ROOT=$(ls -d /project/linglong/sources/src/*)
+  cd ${SRC_ROOT}
+  make -j$(nproc) NOWERROR=1 OSD=sdl TARGETOS=linux PTR64=1 PYTHON_EXECUTABLE=python3 USE_SYSTEM_LIB_ASIO=1 USE_SYSTEM_LIB_EXPAT=1 USE_SYSTEM_LIB_ZLIB=1 USE_SYSTEM_LIB_JPEG=1 USE_SYSTEM_LIB_FLAC=1 USE_SYSTEM_LIB_SQLITE3=1 USE_SYSTEM_LIB_PORTMIDI=1 USE_SYSTEM_LIB_PORTAUDIO=1 USE_SYSTEM_LIB_UTF8PROC=1 USE_SYSTEM_LIB_GLM=1 USE_SYSTEM_LIB_RAPIDJSON=1 USE_SYSTEM_LIB_PUGIXML=1 VERBOSE=1 FULLNAME=mame TARGET=mame SUBTARGET=mame TOOLS=1 CC="ccache clang" CXX="ccache clang++" CFLAGS="-I$MAME_SRC/lib/util -I$MAME_SRC/emu $CFLAGS" CXXFLAGS="-I$MAME_SRC/lib/util -I$MAME_SRC/emu $CXXFLAGS"
+  touch ${PREFIX}/.linyaps_genius
+  chmod -R 755 ${PREFIX}

@@ -6,7 +6,7 @@
 #   包名 → pkgName | 下載地址 → src_url | 架構 → arch | 版本 → orig_version | 類型 → type
 #
 # 選項:
-#   --projects_root=<path>   項目根目錄 (預設: ./projects)
+#   --pack_repo_dir=<path>   項目根目錄 (預設: ./projects)
 #   --output_dir=<path>      輸出目錄 (預設: ./output)
 #   --build_tmp_dir=<path>   構建緩存目錄 (預設: 自動生成)
 #   --src_dir=<path>         原始資源目錄 (預設: ./src)
@@ -40,7 +40,7 @@ log_err()   { echo -e "${RED}[ERROR]${NC} $*"; }
 # ============================================================
 # 預設配置
 # ============================================================
-DEFAULT_PROJECTS_ROOT="./projects"
+DEFAULT_PACK_REPO_DIR="./projects"
 DEFAULT_OUTPUT_DIR="./output"
 DEFAULT_BUILD_TMP_DIR=""
 DEFAULT_SRC_DIR="./src"
@@ -65,7 +65,7 @@ CSV 欄位映射:
   類型        → type (可選，binary/source，為空時使用 --type 預設值)
 
 選項:
-  --projects_root=<path>   項目根目錄 (預設: ./projects)
+  --pack_repo_dir=<path>   項目根目錄 (預設: ./projects)
   --output_dir=<path>      輸出目錄 (預設: ./output)
   --build_tmp_dir=<path>   構建緩存目錄 (預設: 自動生成)
   --src_dir=<path>         原始資源目錄 (預設: ./src)
@@ -80,7 +80,7 @@ CSV 欄位映射:
   ./csv_to_json.sh tasks.csv
 
   # 指定項目根目錄
-  ./csv_to_json.sh tasks.csv --projects_root=/path/to/projects
+  ./csv_to_json.sh tasks.csv --pack_repo_dir=/path/to/projects
 
   # 僅生成 JSON 不執行
   ./csv_to_json.sh tasks.csv --dry-run
@@ -97,7 +97,7 @@ HELP
 # 解析命令行參數
 # ============================================================
 INPUT_FILE=""
-PROJECTS_ROOT="$DEFAULT_PROJECTS_ROOT"
+PACK_REPO_DIR="$DEFAULT_PACK_REPO_DIR"
 OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
 BUILD_TMP_DIR="$DEFAULT_BUILD_TMP_DIR"
 SRC_DIR="$DEFAULT_SRC_DIR"
@@ -113,8 +113,8 @@ parse_args() {
                 show_help
                 exit 0
                 ;;
-            --projects_root=*)
-                PROJECTS_ROOT="${1#*=}"
+            --pack_repo_dir=*)
+                PACK_REPO_DIR="${1#*=}"
                 ;;
             --output_dir=*)
                 OUTPUT_DIR="${1#*=}"
@@ -205,7 +205,7 @@ import json, sys
 with open(sys.argv[1]) as f:
     data = json.load(f)
 g = data.get('global', {})
-print('PROJECTS_ROOT=' + json.dumps(g.get('projects_root', '')))
+print('PACK_REPO_DIR=' + json.dumps(g.get('pack_repo_dir', '')))
 print('OUTPUT_DIR=' + json.dumps(g.get('output_dir', '')))
 print('BUILD_TMP_DIR=' + json.dumps(g.get('build_tmp_dir', '')))
 print('SRC_DIR=' + json.dumps(g.get('src_dir', '')))
@@ -217,7 +217,7 @@ print('SRC_DIR=' + json.dumps(g.get('src_dir', '')))
     eval "$result"
 
     # 僅在配置文件有值時覆蓋預設值
-    [[ -n "$PROJECTS_ROOT" && "$PROJECTS_ROOT" != '""' ]] || PROJECTS_ROOT="$DEFAULT_PROJECTS_ROOT"
+    [[ -n "$PACK_REPO_DIR" && "$PACK_REPO_DIR" != '""' ]] || PACK_REPO_DIR="$DEFAULT_PACK_REPO_DIR"
     [[ -n "$OUTPUT_DIR" && "$OUTPUT_DIR" != '""' ]] || OUTPUT_DIR="$DEFAULT_OUTPUT_DIR"
     [[ -n "$BUILD_TMP_DIR" && "$BUILD_TMP_DIR" != '""' ]] || BUILD_TMP_DIR="$DEFAULT_BUILD_TMP_DIR"
     [[ -n "$SRC_DIR" && "$SRC_DIR" != '""' ]] || SRC_DIR="$DEFAULT_SRC_DIR"
@@ -228,7 +228,7 @@ print('SRC_DIR=' + json.dumps(g.get('src_dir', '')))
 # ============================================================
 csv_to_json() {
     local csv_file="$1"
-    local projects_root="$2"
+    local pack_repo_dir="$2"
     local output_dir="$3"
     local build_tmp_dir="$4"
     local src_dir="$5"
@@ -238,7 +238,7 @@ csv_to_json() {
 import csv, json, sys
 
 csv_file = sys.argv[1]
-projects_root = sys.argv[2]
+pack_repo_dir = sys.argv[2]
 output_dir = sys.argv[3]
 build_tmp_dir = sys.argv[4]
 src_dir = sys.argv[5]
@@ -319,7 +319,7 @@ for row in rows:
 # 組裝完整 JSON
 result = {
     'global': {
-        'projects_root': projects_root,
+        'pack_repo_dir': pack_repo_dir,
         'output_dir': output_dir,
         'build_tmp_dir': build_tmp_dir,
         'src_dir': src_dir
@@ -328,7 +328,7 @@ result = {
 }
 
 print(json.dumps(result, indent=2, ensure_ascii=False))
-" "$csv_file" "$projects_root" "$output_dir" "$build_tmp_dir" "$src_dir" "$default_type"
+" "$csv_file" "$pack_repo_dir" "$output_dir" "$build_tmp_dir" "$src_dir" "$default_type"
 }
 
 # ============================================================
@@ -428,7 +428,7 @@ main() {
     fi
 
     log_info "配置:"
-    log_info "  projects_root: $PROJECTS_ROOT"
+    log_info "  pack_repo_dir: $PACK_REPO_DIR"
     log_info "  output_dir:    $OUTPUT_DIR"
     log_info "  build_tmp_dir: ${BUILD_TMP_DIR:-<自動生成>}"
     log_info "  src_dir:       $SRC_DIR"
@@ -436,7 +436,7 @@ main() {
     # CSV 轉 JSON
     log_info "解析 CSV 文件..."
     local json_content
-    json_content=$(csv_to_json "$INPUT_FILE" "$PROJECTS_ROOT" "$OUTPUT_DIR" "$BUILD_TMP_DIR" "$SRC_DIR" "$DEFAULT_TASK_TYPE") || {
+    json_content=$(csv_to_json "$INPUT_FILE" "$PACK_REPO_DIR" "$OUTPUT_DIR" "$BUILD_TMP_DIR" "$SRC_DIR" "$DEFAULT_TASK_TYPE") || {
         log_err "CSV 解析失敗"
         exit 1
     }

@@ -1,11 +1,17 @@
 {
   "global": {
-    "projects_root": "",
+    "pack_repo_dir": "/data/linyaps-projects",
     "projects_repo": "",
     "output_dir": "./output/${tag}",
     "data_dir": "./data/${tag}.log",
     "build_tmp_dir": "./build_cache",
-    "src_dir": "./src"
+    "src_dir": "./src",
+    "storage": {
+      "s3_remote": "cicd2:/linyaps/packaging-CI-output/",
+      "public_url_base": "https://rustfsadmin.cicd2.getdeepin.org/linyaps/packaging-CI-output/"
+    },
+    "webhook_url": "https://cooperation.uniontech.com/api/workflow/hooks/NmEzMGZlNDlmNzE3ZmIyMmIwZjVlODQ2",
+    "webhook_init_url": "https://cooperation.uniontech.com/api/workflow/hooks/NmEzZDFjMGQxMDM5YjQ1YWRlNGE2OWFh"
   },
   "version_extract_examples": [
     {

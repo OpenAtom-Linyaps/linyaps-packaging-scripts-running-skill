@@ -21,7 +21,7 @@ import yaml
 
 COMMAND_MUST_BE_LIST = "field 'command' must be a list (not string/null/missing)"
 VERSION_MUST_BE_STR = "field 'version' must be a string"
-VERSION_MUST_BE_NUMERIC = "top-level 'version' must be a single digit string (e.g. '1'), got '{}'"
+VERSION_MUST_BE_NUMERIC = "top-level 'version' must be a 1-4 segment digit string (e.g. '1' or '3.0.22.3'), got '{}'"
 PACKAGE_MUST_HAVE = "package must have non-empty 'id', 'name', 'version', 'kind'"
 PACKAGE_VERSION_FORMAT = "package.version must match 'a.b.x.y' pure numeric format (e.g. 5.7.21.0), got '{}'"
 BASE_RUNTIME_REQUIRED = "fields 'base' and 'runtime' must be non-empty strings"
@@ -57,7 +57,9 @@ SOURCES_REQUIRED_FIELDS = {
 }
 
 PACKAGE_VERSION_RE = re.compile(r'^\d+\.\d+\.\d+\.\d+$')
-TOPLEVEL_VERSION_RE = re.compile(r'^\d+$')
+TOPLEVEL_VERSION_RE = re.compile(r'^\d+(?:\.\d+){0,3}$')
+DIGEST_HEX_RE = re.compile(r'^[0-9a-fA-F]+$')
+DIGEST_FORMAT_MSG = "sources[{i}].digest must be a hex string (only 0-9, a-f, A-F), got '{val}'"
 
 
 def validate_sources(sources: list) -> list:
@@ -77,6 +79,9 @@ def validate_sources(sources: list) -> list:
             val = src.get(field)
             if not isinstance(val, str) or not val:
                 errors.append(f"sources[{i}].{field} is required for kind '{kind}'")
+        digest_val = src.get("digest")
+        if isinstance(digest_val, str) and digest_val and not DIGEST_HEX_RE.match(digest_val):
+            errors.append(DIGEST_FORMAT_MSG.format(i=i, val=digest_val))
     return errors
 
 
@@ -187,6 +192,25 @@ def validate(path: str, allow_sources: bool = False) -> list:
     return errors
 
 
+def _emit_version_fix(path, errors):
+    """当失败项仅涉及版本格式（package.version / 顶层 version）时，输出可执行的修复命令。"""
+    if not errors:
+        return
+    version_only_prefixes = (
+        VERSION_MUST_BE_NUMERIC.split("'")[0].rstrip(),
+        PACKAGE_VERSION_FORMAT.split("'")[0].rstrip(),
+        "field 'version'",
+    )
+    if not all(e.startswith(version_only_prefixes) for e in errors):
+        return
+    project_dir = path[:-len("linglong.yaml")] if path.endswith("linglong.yaml") else ""
+    print("", file=sys.stderr)
+    print("# 建议修复：仅存在版本格式问题，重新执行 update 脚本（内部自动归一化 a.b.c.d 并同步顶层 version）", file=sys.stderr)
+    print(f"#   python3 skills/linglong-source-updater/scripts/update-linglong-yaml.py \\", file=sys.stderr)
+    print(f"#     --path={project_dir or '.'} --kind=<archive|git|file|dsc> \\", file=sys.stderr)
+    print("#     --url=<url> --digest=<digest> --name=<name> --version=<上游版本>", file=sys.stderr)
+
+
 def main():
     parser = argparse.ArgumentParser(description='Validate linglong.yaml formatting')
     parser.add_argument('path', help='Path to linglong.yaml')
@@ -200,6 +224,7 @@ def main():
         print(f"FAIL: {len(errors)} issue(s) found", file=sys.stderr)
         for err in errors:
             print(f"  - {err}", file=sys.stderr)
+        _emit_version_fix(args.path, errors)
         sys.exit(1)
     else:
         print("PASS: linglong.yaml format is valid")

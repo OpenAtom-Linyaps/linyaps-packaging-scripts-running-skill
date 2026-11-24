@@ -31,22 +31,26 @@ check_python3
 
 eval "$(parse_json "$TASK_FILE")"
 
-if [[ -z "$PROJECTS_ROOT" || "$PROJECTS_ROOT" == '""' ]]; then
-    log_err "JSON 中缺少 global.projects_root"
+if [[ -z "$PACK_REPO_DIR" || "$PACK_REPO_DIR" == '""' ]]; then
+    log_err "JSON 中缺少 global.pack_repo_dir"
     exit 1
 fi
 
-PROJECTS_ROOT="$(cd "$PROJECTS_ROOT" 2>/dev/null && pwd || echo "$PROJECTS_ROOT")"
+PACK_REPO_DIR="$(cd "$PACK_REPO_DIR" 2>/dev/null && pwd || echo "$PACK_REPO_DIR")"
 OUTPUT_DIR="$(cd "$(dirname "$OUTPUT_DIR")" 2>/dev/null && pwd)/$(basename "$OUTPUT_DIR")" || OUTPUT_DIR="./output"
 SRC_DIR="$(cd "$(dirname "$SRC_DIR")" 2>/dev/null && pwd)/$(basename "$SRC_DIR")" || SRC_DIR="./src"
 
 OUTPUT_DIR=$(json_strip "$OUTPUT_DIR")
 SRC_DIR=$(json_strip "$SRC_DIR")
 BUILD_TMP_DIR=$(json_strip "$BUILD_TMP_DIR")
+DATA_DIR=$(json_strip "$DATA_DIR")
 
-log_info "項目根目錄: $PROJECTS_ROOT"
+log_info "項目根目錄: $PACK_REPO_DIR"
 log_info "輸出目錄:   $OUTPUT_DIR"
 log_info "資源目錄:   $SRC_DIR"
+
+PROJECTS_REPO=$(json_strip "$PROJECTS_REPO")
+sync_projects_root "$PROJECTS_REPO" "$PACK_REPO_DIR" || exit 1
 
 init_directories
 
@@ -102,8 +106,8 @@ run_task() {
     }
 
     local project_dir
-    project_dir=$(find_project_dir "$pkg_name" "$PROJECTS_ROOT") || {
-        log_err "找不到項目目錄: $pkg_name (在 $PROJECTS_ROOT 下)"
+    project_dir=$(find_project_dir "$pkg_name" "$PACK_REPO_DIR") || {
+        log_err "找不到項目目錄: $pkg_name (在 $PACK_REPO_DIR 下)"
         FAIL_COUNT=$((FAIL_COUNT + 1))
         RESULTS+=("$pkg_name: 失敗 (找不到項目目錄)")
         return
@@ -125,32 +129,46 @@ run_task() {
         log_info "該項目不支援 --build_tmp_dir，跳過該參數"
     fi
 
-    local cmd="./pak_linyaps.sh \
-  --linyaps_arch=${arch} \
-  --origin_version=${orig_version} \
-  --src_path=\"${src_path}\" \
-  --output_dir=\"${OUTPUT_DIR}\""
+    local -a cmd=(./pak_linyaps.sh \
+  --linyaps_arch="$arch" \
+  --origin_version="$orig_version" \
+  --src_path="$src_path" \
+  --output_dir="$OUTPUT_DIR")
     if [[ -n "$build_tmp_arg" ]]; then
-        cmd="$cmd \\
-  ${build_tmp_arg}"
+        cmd+=(--build_tmp_dir="$task_build_tmp_dir")
     fi
 
     log_info "執行命令:"
-    echo "$cmd"
+    printf '%s ' "${cmd[@]}"
+    echo ""
     echo ""
 
     local log_file="$OUTPUT_DIR/${pkg_name}.log"
     local start_time
     start_time=$(date +%s)
 
-    if build_with_retry "$pkg_name 打包（binary）" "$MAX_BUILD_ATTEMPTS" "$BUILD_TIMEOUT_SEC" \
-        bash -c "cd '$project_dir' && eval '$cmd'" > "$log_file" 2>&1; then
+    if (
+        cd "$project_dir" && build_with_retry "$pkg_name 打包（binary）" "$MAX_BUILD_ATTEMPTS" "$BUILD_TIMEOUT_SEC" "${cmd[@]}"
+    ) > "$log_file" 2>&1; then
         local end_time
         end_time=$(date +%s)
         local elapsed=$((end_time - start_time))
         log_ok "$pkg_name 打包成功 (耗時 ${elapsed}s)"
         log_info "最後輸出:"
         tail -5 "$log_file" | sed 's/^/  /'
+
+        # 檢查並投遞修改日志
+        local fix_log_path="${DATA_DIR}/${pkg_name}.fix-log.md"
+        if [[ -f "$fix_log_path" ]]; then
+            log_info "檢測到修改日志，發布到 issue..."
+            bash "$REPO_ROOT/skills/linyaps-multica-packer-dispatch/scripts/dispatch.sh" \
+                post_fix_log \
+                --pkgName="$pkg_name" \
+                --fix-log-path="$fix_log_path" \
+                ${DATA_DIR:+--data-dir="$DATA_DIR"} \
+                2>/dev/null || log_warn "發布修改日志失敗（不阻斷）"
+        fi
+
         SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
         RESULTS+=("$pkg_name: 成功 (${elapsed}s)")
     else

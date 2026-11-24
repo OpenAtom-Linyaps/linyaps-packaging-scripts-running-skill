@@ -12,6 +12,10 @@
 
 set -euo pipefail
 
+SRC_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+source "$SRC_DIR/common.sh"
+
 WORKSPACE=""
 OUTPUT_FILE=""
 
@@ -42,16 +46,15 @@ if [[ -n "$WORKSPACE" ]]; then
   multica workspace switch "$WORKSPACE" >/dev/null 2>&1 || true
 fi
 
-# 查询当前 issue ID
-ISSUE_ID=$(multica issue list --limit 10 2>/dev/null | grep -oP 'issue-\d+' | head -1)
-
-if [[ -z "$ISSUE_ID" ]]; then
+# 查询当前 issue ID（精确 UUID）
+if ! ISSUE_ID=$(get_issue_id); then
   echo '{"IS_INIT_ASSIGNED":false,"SRC_INIT_ASSIGNED":false}'
   exit 0
 fi
+[[ -z "$ISSUE_ID" ]] && { echo '{"IS_INIT_ASSIGNED":false,"SRC_INIT_ASSIGNED":false}'; exit 0; }
 
-# 获取评论内容
-COMMENTS=$(multica issue comments "$ISSUE_ID" 2>/dev/null || echo "")
+# 获取评论内容（multica issue comment list --output json）
+COMMENTS=$(multica issue comment list "$ISSUE_ID" --output json 2>/dev/null || echo "")
 
 if echo "$COMMENTS" | grep -q "linyaps-init"; then
   IS_INIT_ASSIGNED=true
